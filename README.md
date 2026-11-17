@@ -4,7 +4,9 @@
 
 **Hold fn. Speak. It types.** A small, free, open-source Mac app that lets you talk instead of typing. Your voice is turned into text on your own Mac and typed wherever your cursor is.
 
-*Tynda* (тыңда) is Kazakh for "listen".
+*Tynda* (тыңда) is Kazakh for "listen". Made by [Markerloop](https://markerloop.com) · [tynda.markerloop.com](https://tynda.markerloop.com)
+
+Free to use, open source, MIT. Pull requests are welcome — see [Contributing](#contributing).
 
 > **Early alpha.** Tynda is new and has been used on one Mac. It is installed from source, there is no signed download yet. Expect rough edges and tell us about them.
 
@@ -37,7 +39,7 @@ A small black island with a live waveform shows at the top of the screen while T
 ## Install
 
 ```bash
-git clone https://github.com/toleberdyyeva/tynda.git
+git clone https://github.com/Markerloop-Team/tynda.git
 cd tynda
 ./install.sh
 ```
@@ -78,6 +80,19 @@ The only file Tynda writes is a diagnostics log, `~/Library/Logs/Tynda.log`. It 
 - The hotkey is fixed to fn.
 - If the menu bar is full, macOS may hide the Tynda icon. Dictation still works; open Tynda again from Applications to get to the setup window.
 - Tested on macOS 26 only.
+
+## Contributing
+
+Tynda is small on purpose, and that is the main thing to protect. Ideas that fit:
+
+- a signed, notarised download, so nobody has to build from source;
+- a hotkey other than fn;
+- better punctuation and style for more ways of speaking (`STYLE` in `dictate_server.py`);
+- making it work, or fail clearly, on Macs it has not met yet.
+
+Three rules every change has to keep: nothing is saved, nothing leaves the Mac, and there is nothing to configure before the first sentence. [CONTRIBUTING.md](CONTRIBUTING.md) has the practical part — how to build, test and send a pull request.
+
+Found a bug? [Open an issue](https://github.com/Markerloop-Team/tynda/issues) and attach `~/Library/Logs/Tynda.log` (it has timings, not your words).
 
 ## License
 

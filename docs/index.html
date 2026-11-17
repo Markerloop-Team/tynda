@@ -9,7 +9,9 @@
 <meta property="og:description" content="A small, free, open-source Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac.">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="icon.png">
-<meta property="og:image" content="icon.png">
+<meta property="og:image" content="https://tynda.markerloop.com/icon.png">
+<meta property="og:url" content="https://tynda.markerloop.com/">
+<link rel="canonical" href="https://tynda.markerloop.com/">
 <style>
   :root {
     --bg: #0b0b0c;
@@ -169,17 +171,17 @@
       <a class="hide" href="#how">How it works</a>
       <a class="hide" href="#needs">Requirements</a>
       <a href="#install">Install</a>
-      <a href="https://github.com/toleberdyyeva/tynda">GitHub</a>
+      <a href="https://github.com/Markerloop-Team/tynda">GitHub</a>
     </nav>
   </header>
 
   <div class="hero">
-    <div class="alpha">Early alpha · free · open source</div>
+    <div class="alpha">Early alpha · free to use · open source</div>
     <h1>Hold <em>fn</em>. Speak.<br>It types.</h1>
     <p class="lede">Tynda is a small Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac and is typed wherever your cursor is.</p>
     <div class="cta">
       <a class="btn primary" href="#install">Install from source</a>
-      <a class="btn" href="https://github.com/toleberdyyeva/tynda">View on GitHub</a>
+      <a class="btn" href="https://github.com/Markerloop-Team/tynda">View on GitHub</a>
     </div>
 
     <div class="stage" aria-label="Demonstration of dictation">
@@ -252,7 +254,7 @@
   <section id="install">
     <h2>Install</h2>
     <p class="sub">There is no signed download yet, so Tynda is installed from source. You need the Xcode Command Line Tools. The script does the rest, then a setup window walks you through the permissions and your first dictation.</p>
-<pre>git clone https://github.com/toleberdyyeva/tynda.git
+<pre>git clone https://github.com/Markerloop-Team/tynda.git
 cd tynda
 ./install.sh     <span class="c"># checks your Mac, gets the model, builds, opens Tynda</span></pre>
     <div class="steps">
@@ -267,13 +269,13 @@ cd tynda
       <h2>What "early alpha" means here</h2>
       <p>Tynda was built in a day and has been used on one Mac. It works for its author every day; it has not met yours yet.</p>
       <p>It is not signed with an Apple Developer ID, so macOS asks for the permissions again after every update. The hotkey is fixed to fn.</p>
-      <p style="margin:0">If it breaks, <a href="https://github.com/toleberdyyeva/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
+      <p style="margin:0">If it breaks, <a href="https://github.com/Markerloop-Team/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
     </div>
   </section>
 
   <footer>
     <span><b style="color:var(--dim)">tynda</b> (тыңда) — Kazakh for "listen".</span>
-    <span>MIT licence · <a href="https://github.com/toleberdyyeva/tynda">Source on GitHub</a></span>
+    <span>Made by <a href="https://markerloop.com">Markerloop</a> · MIT licence · <a href="https://github.com/Markerloop-Team/tynda">Source on GitHub</a> · pull requests welcome</span>
   </footer>
 </div>
 

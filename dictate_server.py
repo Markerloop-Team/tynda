@@ -25,7 +25,7 @@ import numpy as np  # noqa: E402
 from mlx_whisper.audio import N_FRAMES, N_SAMPLES, load_audio, log_mel_spectrogram, pad_or_trim  # noqa: E402
 from mlx_whisper.transcribe import ModelHolder  # noqa: E402
 
-MODEL = os.environ.get("JAZ_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+MODEL = os.environ.get("TYNDA_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
 LANGS = {"ru", "en", "kk"}
 # Phrases whisper invents on silence or noise.
 JUNK = re.compile(

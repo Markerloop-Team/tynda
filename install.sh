@@ -1,22 +1,22 @@
 #!/bin/zsh
-# Installs Jaz from source: checks the Mac, sets up the speech model, builds the app
+# Installs Tynda from source: checks the Mac, sets up the speech model, builds the app
 # and puts it into ~/Applications. Safe to run again — it updates what is there.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SUPPORT="$HOME/Library/Application Support/Jaz"
+SUPPORT="$HOME/Library/Application Support/Tynda"
 VENV="$SUPPORT/venv"
 DEST="$HOME/Applications"
-MODEL="${JAZ_WHISPER_MODEL:-mlx-community/whisper-large-v3-turbo}"
+MODEL="${TYNDA_WHISPER_MODEL:-mlx-community/whisper-large-v3-turbo}"
 
 say_step() { print -P "\n%B==> $1%b"; }
 fail() { print -P "\n%F{red}%B$1%b%f" >&2; exit 1; }
 
 say_step "Checking this Mac"
-[[ "$(uname -s)" == "Darwin" ]] || fail "Jaz runs on macOS only."
-[[ "$(uname -m)" == "arm64" ]] || fail "Jaz needs a Mac with Apple silicon (M1 or newer). The speech model does not run on Intel Macs."
+[[ "$(uname -s)" == "Darwin" ]] || fail "Tynda runs on macOS only."
+[[ "$(uname -m)" == "arm64" ]] || fail "Tynda needs a Mac with Apple silicon (M1 or newer). The speech model does not run on Intel Macs."
 OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
-(( OS_MAJOR >= 14 )) || fail "Jaz needs macOS 14 or newer. This Mac runs $(sw_vers -productVersion)."
+(( OS_MAJOR >= 14 )) || fail "Tynda needs macOS 14 or newer. This Mac runs $(sw_vers -productVersion)."
 xcrun --find clang >/dev/null 2>&1 || fail "The Xcode Command Line Tools are missing. Run:  xcode-select --install  — then run this script again."
 echo "macOS $(sw_vers -productVersion), Apple silicon, compiler found."
 
@@ -50,35 +50,35 @@ else
 fi
 
 say_step "Downloading the speech model (about 1.6 GB, only the first time)"
-JAZ_MODEL="$MODEL" "$VENV/bin/python" - <<'EOF'
+TYNDA_MODEL="$MODEL" "$VENV/bin/python" - <<'EOF'
 import os
 import numpy as np
 import mlx_whisper
-mlx_whisper.transcribe(np.zeros(16000, dtype=np.float32), path_or_hf_repo=os.environ["JAZ_MODEL"], language="en")
+mlx_whisper.transcribe(np.zeros(16000, dtype=np.float32), path_or_hf_repo=os.environ["TYNDA_MODEL"], language="en")
 print("The model is ready.")
 EOF
 
-say_step "Building Jaz"
+say_step "Building Tynda"
 ./build.sh
 
 say_step "Installing into $DEST"
 mkdir -p "$DEST"
-pkill -x Jaz 2>/dev/null || true
-rm -rf "$DEST/Jaz.app"
-cp -R Jaz.app "$DEST/Jaz.app"
+pkill -x Tynda 2>/dev/null || true
+rm -rf "$DEST/Tynda.app"
+cp -R Tynda.app "$DEST/Tynda.app"
 # A rebuild is a new app for macOS: forget the stale permission so it asks again cleanly.
-tccutil reset Accessibility app.jaz.mac >/dev/null 2>&1 || true
-open "$DEST/Jaz.app"
+tccutil reset Accessibility app.tynda.mac >/dev/null 2>&1 || true
+open "$DEST/Tynda.app"
 
 FN_ACTION="$(defaults read com.apple.HIToolbox AppleFnUsageType 2>/dev/null || echo 0)"
-print -P "\n%BJaz is running — look for ◉ in the menu bar.%b"
+print -P "\n%BTynda is running — look for ◉ in the menu bar.%b"
 cat <<EOF
 
 Two things are left, both yours to do:
 
 1. Permissions. macOS asks for them one by one:
      Microphone                         — click Allow.
-     Accessibility                      — System Settings → Privacy & Security → Accessibility → turn on Jaz.
+     Accessibility                      — System Settings → Privacy & Security → Accessibility → turn on Tynda.
                                           Needed to hear the fn key and to type the text for you.
      Screen & System Audio Recording    — asked the first time you record a meeting.
 EOF
@@ -96,5 +96,5 @@ fi
 cat <<EOF
 
 Then hold fn, say something, let go. Double-tap fn for hands-free.
-Recordings and dictation history live in ~/Jaz.
+Recordings and dictation history live in ~/Tynda.
 EOF

@@ -1,4 +1,4 @@
-// Jaz — a personal menu bar recorder: microphone + system audio into two
+// Tynda — a personal menu bar recorder: microphone + system audio into two
 // files, then a local pipeline (process.py) turns them into a transcript and a note.
 //
 // Objective-C on purpose: it builds with the plain Command Line Tools.
@@ -11,20 +11,20 @@
 // The Python scripts travel inside the app bundle.
 static NSURL *ScriptsDir(void) { return NSBundle.mainBundle.resourceURL; }
 
-// Recordings, transcripts and notes. Change with: defaults write app.jaz.mac notesDir /some/folder
+// Recordings, transcripts and notes. Change with: defaults write app.tynda.mac notesDir /some/folder
 static NSURL *NotesDir(void) {
     NSString *custom = [NSUserDefaults.standardUserDefaults stringForKey:@"notesDir"];
-    NSString *path = custom.length ? custom.stringByExpandingTildeInPath : [NSHomeDirectory() stringByAppendingPathComponent:@"Jaz"];
+    NSString *path = custom.length ? custom.stringByExpandingTildeInPath : [NSHomeDirectory() stringByAppendingPathComponent:@"Tynda"];
     return [NSURL fileURLWithPath:path];
 }
 
 // The Python that has mlx-whisper installed: the one install.sh creates, or a `uv tool install mlx-whisper`.
-// Override with: defaults write app.jaz.mac python /path/to/python
+// Override with: defaults write app.tynda.mac python /path/to/python
 static NSString *PythonPath(void) {
     NSMutableArray<NSString *> *candidates = [NSMutableArray new];
     NSString *custom = [NSUserDefaults.standardUserDefaults stringForKey:@"python"];
     if (custom.length) [candidates addObject:custom.stringByExpandingTildeInPath];
-    [candidates addObject:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Jaz/venv/bin/python"]];
+    [candidates addObject:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tynda/venv/bin/python"]];
     [candidates addObject:[NSHomeDirectory() stringByAppendingPathComponent:@".local/share/uv/tools/mlx-whisper/bin/python"]];
     for (NSString *c in candidates) if ([NSFileManager.defaultManager isExecutableFileAtPath:c]) return c;
     return nil;
@@ -37,9 +37,9 @@ static NSString *L(NSString *en, NSString *ru) {
     dispatch_once(&once, ^{ russian = [NSLocale.preferredLanguages.firstObject hasPrefix:@"ru"]; });
     return russian ? ru : en;
 }
-static NSString *JazLang(void) { return L(@"en", @"ru"); }
+static NSString *TyndaLang(void) { return L(@"en", @"ru"); }
 
-// Diagnostics go to ~/Library/Logs/Jaz.log.
+// Diagnostics go to ~/Library/Logs/Tynda.log.
 static void Log(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
 static void Log(NSString *format, ...) {
     va_list args;
@@ -49,7 +49,7 @@ static void Log(NSString *format, ...) {
     NSDateFormatter *fmt = [NSDateFormatter new];
     fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
     NSString *line = [NSString stringWithFormat:@"%@ %@\n", [fmt stringFromDate:[NSDate date]], msg];
-    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Jaz.log"];
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Tynda.log"];
     if (![NSFileManager.defaultManager fileExistsAtPath:path]) [NSFileManager.defaultManager createFileAtPath:path contents:nil attributes:nil];
     NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:path];
     [h seekToEndOfFile];
@@ -75,7 +75,7 @@ static BOOL SelfTest(void) { return [NSProcessInfo.processInfo.arguments contain
 }
 
 - (instancetype)init {
-    if ((self = [super init])) _queue = dispatch_queue_create("jaz.system-audio", DISPATCH_QUEUE_SERIAL);
+    if ((self = [super init])) _queue = dispatch_queue_create("tynda.system-audio", DISPATCH_QUEUE_SERIAL);
     return self;
 }
 
@@ -84,7 +84,7 @@ static BOOL SelfTest(void) { return [NSProcessInfo.processInfo.arguments contain
                                                onScreenWindowsOnly:NO
                                                  completionHandler:^(SCShareableContent *content, NSError *error) {
         if (error || content.displays.count == 0) {
-            done(error ?: [NSError errorWithDomain:@"Jaz" code:1 userInfo:@{NSLocalizedDescriptionKey: @"No display found"}]);
+            done(error ?: [NSError errorWithDomain:@"Tynda" code:1 userInfo:@{NSLocalizedDescriptionKey: @"No display found"}]);
             return;
         }
         SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:content.displays.firstObject
@@ -183,7 +183,7 @@ static BOOL SelfTest(void) { return [NSProcessInfo.processInfo.arguments contain
 }
 
 - (instancetype)init {
-    if ((self = [super init])) _queue = dispatch_queue_create("jaz.dictation-audio", DISPATCH_QUEUE_SERIAL);
+    if ((self = [super init])) _queue = dispatch_queue_create("tynda.dictation-audio", DISPATCH_QUEUE_SERIAL);
     return self;
 }
 
@@ -211,7 +211,7 @@ static BOOL SelfTest(void) { return [NSProcessInfo.processInfo.arguments contain
     AVAudioInputNode *input = _engine.inputNode;
     AVAudioFormat *fmt = [input outputFormatForBus:0];
     if (fmt.sampleRate == 0 || fmt.channelCount == 0) {
-        if (error) *error = [NSError errorWithDomain:@"Jaz" code:4 userInfo:@{NSLocalizedDescriptionKey: L(@"Microphone is unavailable", @"Микрофон недоступен")}];
+        if (error) *error = [NSError errorWithDomain:@"Tynda" code:4 userInfo:@{NSLocalizedDescriptionKey: L(@"Microphone is unavailable", @"Микрофон недоступен")}];
         _engine = nil;
         return NO;
     }
@@ -766,7 +766,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         CGEventTapEnable(tap, true);
         CFRunLoopRun();
     }];
-    thread.name = @"jaz.keys";
+    thread.name = @"tynda.keys";
     thread.qualityOfService = NSQualityOfServiceUserInteractive;
     [thread start];
     Log(@"dictation: fn listener installed");
@@ -942,7 +942,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _dGeneration++;
     [self stopWatchdog];
     float peak = _dictation.peakLevel;
-    NSString *name = [NSString stringWithFormat:@"jaz-dictation-%lu.wav", (unsigned long)++_wavCounter];
+    NSString *name = [NSString stringWithFormat:@"tynda-dictation-%lu.wav", (unsigned long)++_wavCounter];
     NSURL *wav = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:name]];
     NSTimeInterval duration = [_dictation stopAndWriteWAV:wav];
     NSDate *sentAt = [NSDate date];
@@ -1085,7 +1085,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!granted) {
                 [self alert:L(@"No microphone access", @"Нет доступа к микрофону")
-                       text:L(@"System Settings → Privacy & Security → Microphone → turn on Jaz.", @"Системные настройки → Конфиденциальность и безопасность → Микрофон → включить Jaz.")];
+                       text:L(@"System Settings → Privacy & Security → Microphone → turn on Tynda.", @"Системные настройки → Конфиденциальность и безопасность → Микрофон → включить Tynda.")];
                 done();
                 return;
             }
@@ -1115,7 +1115,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
                     if (sysErr) {
                         self->_system = nil;
                         [self alert:L(@"Recording the microphone only", @"Пишу только микрофон")
-                               text:[NSString stringWithFormat:L(@"The other side is not being recorded: permission is missing. System Settings → Privacy & Security → Screen & System Audio Recording → turn on Jaz, then restart it.\n\n(%@)", @"Звук собеседников не записывается: нет разрешения. Системные настройки → Конфиденциальность и безопасность → Запись экрана и системного звука → включить Jaz, затем перезапустить его.\n\n(%@)"), sysErr.localizedDescription]];
+                               text:[NSString stringWithFormat:L(@"The other side is not being recorded: permission is missing. System Settings → Privacy & Security → Screen & System Audio Recording → turn on Tynda, then restart it.\n\n(%@)", @"Звук собеседников не записывается: нет разрешения. Системные настройки → Конфиденциальность и безопасность → Запись экрана и системного звука → включить Tynda, затем перезапустить его.\n\n(%@)"), sysErr.localizedDescription]];
                     } else {
                         self->_system = sys;
                     }
@@ -1174,10 +1174,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     task.executableURL = [NSURL fileURLWithPath:python];
     task.arguments = @[[ScriptsDir() URLByAppendingPathComponent:@"process.py"].path, dir.path];
     NSMutableDictionary *env = [NSProcessInfo.processInfo.environment mutableCopy];
-    env[@"JAZ_LANG"] = JazLang();
-    // Notes can come from any command-line LLM: defaults write app.jaz.mac noteCommand "ollama run llama3.2"
+    env[@"TYNDA_LANG"] = TyndaLang();
+    // Notes can come from any command-line LLM: defaults write app.tynda.mac noteCommand "ollama run llama3.2"
     NSString *noteCommand = [NSUserDefaults.standardUserDefaults stringForKey:@"noteCommand"];
-    if (noteCommand.length) env[@"JAZ_NOTE_CMD"] = noteCommand;
+    if (noteCommand.length) env[@"TYNDA_NOTE_CMD"] = noteCommand;
     task.environment = env;
     NSString *logPath = [dir URLByAppendingPathComponent:@"process.log"].path;
     [NSFileManager.defaultManager createFileAtPath:logPath contents:nil attributes:nil];

@@ -3,7 +3,7 @@
 Usage: python process.py <recording folder>     (the Python that has mlx-whisper installed)
 
 Transcription is local (mlx-whisper). The note is written by a command-line LLM:
-the `claude` CLI if it is installed, or whatever JAZ_NOTE_CMD names — any command that
+the `claude` CLI if it is installed, or whatever TYNDA_NOTE_CMD names — any command that
 reads a prompt on stdin and prints the answer. Without one you still get the transcript.
 """
 import json
@@ -19,10 +19,10 @@ os.environ["PATH"] = ":".join([
     str(Path.home() / ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin", os.environ.get("PATH", ""),
 ])
 
-WHISPER_MODEL = os.environ.get("JAZ_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
-CLAUDE_MODEL = os.environ.get("JAZ_CLAUDE_MODEL", "opus")
-NOTE_CMD = os.environ.get("JAZ_NOTE_CMD", "")
-RUSSIAN = os.environ.get("JAZ_LANG", "en") == "ru"
+WHISPER_MODEL = os.environ.get("TYNDA_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+CLAUDE_MODEL = os.environ.get("TYNDA_CLAUDE_MODEL", "opus")
+NOTE_CMD = os.environ.get("TYNDA_NOTE_CMD", "")
+RUSSIAN = os.environ.get("TYNDA_LANG", "en") == "ru"
 ME, THEM = ("Я", "Собеседник") if RUSSIAN else ("Me", "Them")
 
 NOTE_PROMPT = """You are writing the notes of a meeting from its transcript. The transcript is automatic: \
@@ -169,7 +169,7 @@ def main():
 
     cmd = note_command()
     if not cmd:
-        log("no note: neither the claude CLI nor JAZ_NOTE_CMD is available; the transcript is ready")
+        log("no note: neither the claude CLI nor TYNDA_NOTE_CMD is available; the transcript is ready")
         return 0
     try:
         note = write_note(cmd, transcript)

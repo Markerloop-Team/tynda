@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Jaz — hold fn, speak, it types</title>
+<title>Tynda — hold fn, speak, it types</title>
 <meta name="description" content="Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.">
-<meta property="og:title" content="Jaz — hold fn, speak, it types">
+<meta property="og:title" content="Tynda — hold fn, speak, it types">
 <meta property="og:description" content="Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%230b0b0c'/%3E%3Cg fill='%23f4f1ea'%3E%3Crect x='7' y='13' width='3' height='6' rx='1.5'/%3E%3Crect x='12' y='8' width='3' height='16' rx='1.5'/%3E%3Crect x='17' y='11' width='3' height='10' rx='1.5'/%3E%3Crect x='22' y='14' width='3' height='4' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
 <style>
@@ -160,23 +160,23 @@
 <div class="wrap">
 
   <header>
-    <a class="mark" href="#">Jaz<span>.</span></a>
+    <a class="mark" href="#">Tynda<span>.</span></a>
     <nav>
       <a class="hide" href="#how">How it works</a>
       <a class="hide" href="#meetings">Meetings</a>
       <a class="hide" href="#needs">Requirements</a>
       <a href="#install">Install</a>
-      <a href="https://github.com/toleberdyyeva/jaz">GitHub</a>
+      <a href="https://github.com/toleberdyyeva/tynda">GitHub</a>
     </nav>
   </header>
 
   <div class="hero">
     <div class="alpha">Early alpha · free · open source</div>
     <h1>Hold <em>fn</em>. Speak.<br>It types.</h1>
-    <p class="lede">Jaz is voice dictation and meeting notes for the Mac. Your speech is recognised on your own machine and typed wherever your cursor is.</p>
+    <p class="lede">Tynda is voice dictation and meeting notes for the Mac. Your speech is recognised on your own machine and typed wherever your cursor is.</p>
     <div class="cta">
       <a class="btn primary" href="#install">Install from source</a>
-      <a class="btn" href="https://github.com/toleberdyyeva/jaz">View on GitHub</a>
+      <a class="btn" href="https://github.com/toleberdyyeva/tynda">View on GitHub</a>
     </div>
 
     <div class="stage" aria-label="Demonstration of dictation">
@@ -196,7 +196,7 @@
 
   <section id="how">
     <h2>Three gestures, nothing to learn</h2>
-    <p class="sub">A small black island appears at the top of the screen while Jaz listens, with a live waveform of your voice. It never takes focus away from what you are typing in.</p>
+    <p class="sub">A small black island appears at the top of the screen while Tynda listens, with a live waveform of your voice. It never takes focus away from what you are typing in.</p>
     <div class="grid">
       <div class="card">
         <div class="k"><kbd>fn</kbd> held</div>
@@ -225,9 +225,9 @@
       <div class="card">
         <ul class="plain">
           <li><b>No account.</b> Nothing to sign up for.</li>
-          <li><b>No server.</b> There is no Jaz cloud for audio to go to.</li>
+          <li><b>No server.</b> There is no Tynda cloud for audio to go to.</li>
           <li><b>No telemetry.</b> The only log is a text file on your disk.</li>
-          <li><b>One exception, your choice.</b> Meeting summaries send the transcript text to the LLM you point Jaz at. Skip it and you still get the transcript.</li>
+          <li><b>One exception, your choice.</b> Meeting summaries send the transcript text to the LLM you point Tynda at. Skip it and you still get the transcript.</li>
         </ul>
       </div>
     </div>
@@ -242,7 +242,7 @@
       </div>
       <div>
         <h2>Meetings, without a bot in the call</h2>
-        <p class="sub">Click ◉ in the menu bar and record. Jaz captures your microphone and the computer's sound as two separate tracks, so it knows who is you and who is them — in Meet, Zoom, a phone call on speaker, anything that makes sound.</p>
+        <p class="sub">Click ◉ in the menu bar and record. Tynda captures your microphone and the computer's sound as two separate tracks, so it knows who is you and who is them — in Meet, Zoom, a phone call on speaker, anything that makes sound.</p>
         <p class="sub" style="margin-bottom:0">When you stop, you get a transcript and a short written summary with decisions and action items, as plain Markdown files in a folder you own.</p>
       </div>
     </div>
@@ -250,7 +250,7 @@
 
   <section id="needs">
     <h2>Will it run on your Mac?</h2>
-    <p class="sub">Jaz is not for every computer. Check this before you spend time on the install.</p>
+    <p class="sub">Tynda is not for every computer. Check this before you spend time on the install.</p>
     <table>
       <tr><td>Mac</td><td><b>Apple silicon</b> — M1 or newer. Intel Macs are not supported: the speech model does not run on them.</td></tr>
       <tr><td>macOS</td><td><b>14 Sonoma or newer.</b></td></tr>
@@ -264,13 +264,13 @@
 
   <section id="install">
     <h2>Install</h2>
-    <p class="sub">There is no signed download yet, so Jaz is installed from source. You need the Xcode Command Line Tools and Homebrew. The script does the rest and tells you what it is doing.</p>
-<pre>git clone https://github.com/toleberdyyeva/jaz.git
-cd jaz
-./install.sh     <span class="c"># checks your Mac, gets the model, builds, opens Jaz</span></pre>
+    <p class="sub">There is no signed download yet, so Tynda is installed from source. You need the Xcode Command Line Tools and Homebrew. The script does the rest and tells you what it is doing.</p>
+<pre>git clone https://github.com/toleberdyyeva/tynda.git
+cd tynda
+./install.sh     <span class="c"># checks your Mac, gets the model, builds, opens Tynda</span></pre>
     <div class="steps">
       <div><b>Microphone</b>macOS asks once. Click Allow.</div>
-      <div><b>Accessibility</b>So Jaz can notice the fn key and type the text for you.</div>
+      <div><b>Accessibility</b>So Tynda can notice the fn key and type the text for you.</div>
       <div><b>System audio</b>Asked the first time you record a meeting, to hear the other side.</div>
     </div>
   </section>
@@ -278,15 +278,15 @@ cd jaz
   <section>
     <div class="honest">
       <h2>What "early alpha" means here</h2>
-      <p>Jaz was built in a day and has been used on one Mac. It works for its author every day; it has not met yours yet.</p>
+      <p>Tynda was built in a day and has been used on one Mac. It works for its author every day; it has not met yours yet.</p>
       <p>It is not signed with an Apple Developer ID, so macOS asks for the permissions again after every update. There is no settings window and the hotkey is fixed to fn.</p>
-      <p style="margin:0">If it breaks, <a href="https://github.com/toleberdyyeva/jaz/issues">open an issue</a> and attach <code>~/Library/Logs/Jaz.log</code>.</p>
+      <p style="margin:0">If it breaks, <a href="https://github.com/toleberdyyeva/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
     </div>
   </section>
 
   <footer>
-    <span><b style="color:var(--dim)">jaz</b> (жаз) — Kazakh for "write". Pronounced like the music.</span>
-    <span>MIT licence · <a href="https://github.com/toleberdyyeva/jaz">Source on GitHub</a></span>
+    <span><b style="color:var(--dim)">tynda</b> (тыңда) — Kazakh for "listen".</span>
+    <span>MIT licence · <a href="https://github.com/toleberdyyeva/tynda">Source on GitHub</a></span>
   </footer>
 </div>
 

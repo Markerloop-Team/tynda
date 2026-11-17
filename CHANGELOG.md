@@ -21,9 +21,12 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - **The island.** A small black pill with a live waveform at the top of the screen while Tynda listens. It never
   takes focus.
 - **On-device speech recognition.** Whisper large-v3-turbo through Apple MLX, kept loaded so a short phrase
-  takes about a second and a half. No language to choose: the model works out what it hears.
+  takes about a second and a half.
+- **Languages.** English, Russian and Kazakh out of the box; add or remove languages in the setup window. Tynda
+  only considers the languages on the list, which keeps stray sounds from turning into text in a language you
+  do not speak.
 - **Nothing is saved.** No history and no audio on disk; the only file is a log of timings.
-- **Setup window.** Walks through the microphone, Accessibility, the dictation key and the speech model with a
+- **Setup window.** Walks through the microphone, Accessibility, the dictation key, the languages and the speech model with a
   live status for each, has a field to try the first phrase in, and a switch to start Tynda at login.
 - **Install and uninstall scripts.** `./install.sh` sets up the model, builds the app with `clang` and opens it;
   `./uninstall.sh` removes it again.

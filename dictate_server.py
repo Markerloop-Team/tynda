@@ -27,10 +27,10 @@ from mlx_whisper.transcribe import ModelHolder  # noqa: E402
 MODEL = os.environ.get("TYNDA_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
 RATE = 16000
 
-# You just speak; there is nothing to choose. The model works out what it hears. The one thing it
-# gets wrong is a short phrase in a language that has close relatives, so the languages this Mac is
-# set up in break the tie. A hint, never a restriction.
-HINT = [c for c in os.environ.get("TYNDA_HINT", "").split(",") if c]
+# The languages to listen for, chosen in the setup window. Left to itself the model sometimes takes a
+# cough or a short word for a sentence in a language nobody in the room speaks; a short list stops that.
+# An empty list means "any language".
+LANGS = [c for c in os.environ.get("TYNDA_LANGS", "en,ru,kk").split(",") if c]
 
 # Spontaneous speech often comes back lowercase and unpunctuated. A short, properly punctuated
 # lead-in sets the style. Where there is none, the model's own habits apply.
@@ -84,11 +84,7 @@ def spoken_language(audio):
     model = ModelHolder.get_model(MODEL, mx.float16)
     mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
     _, probs = model.detect_language(pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16))
-    best = max(probs, key=probs.get)
-    hinted = max(HINT, key=lambda c: probs.get(c, 0)) if HINT else None
-    if hinted and best not in HINT and probs.get(hinted, 0) >= 0.15:
-        return hinted
-    return best
+    return max(LANGS or probs, key=lambda c: probs.get(c, 0))
 
 
 def run(audio, language):

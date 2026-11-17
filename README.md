@@ -19,7 +19,9 @@ Free to use, open source, MIT. Pull requests are welcome — see [Contributing](
 - **Esc** throws it away.
 - **fn taken?** Pick another key in the setup window: Option, Control, the right Command or an F-key. Choose one you do not use for shortcuts.
 
-A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, nothing to configure. You speak the way you normally speak and get what you said.
+A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, and the defaults work from the first sentence.
+
+Tynda listens for English, Russian and Kazakh out of the box. Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak.
 
 ## Nothing is saved, nothing leaves your Mac
 
@@ -54,7 +56,8 @@ When it finishes, a setup window opens and walks you through the rest, with a li
 1. **Microphone** — to hear you.
 2. **Accessibility** — to notice the fn key and to type the text for you.
 3. **Dictation key** — fn has to be free ("Do Nothing" in Keyboard settings), or pick another key right there.
-4. **Speech model** — loads in a few seconds.
+4. **Languages** — English, Russian and Kazakh to begin with; change the list any time.
+5. **Speech model** — loads in a few seconds.
 
 Then it gives you a text field to try your first dictation in. You can open this window again any time: Tynda icon in the menu bar → *Setup…*, or just open Tynda again from Applications.
 

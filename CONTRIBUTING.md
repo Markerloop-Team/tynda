@@ -6,7 +6,7 @@ Thanks for wanting to help. Tynda is one Objective-C file, one Python file and t
 
 1. **Nothing is saved.** No history, no audio, no text on disk. The only file is a log of timings.
 2. **Nothing leaves the Mac.** No network calls after the model is downloaded, no telemetry, no accounts.
-3. **Nothing to configure.** Hold fn, speak, get text. A change that adds a setting should explain why a good default is impossible.
+3. **Nothing to configure before the first sentence.** Hold fn, speak, get text. The two things that can be changed — the key and the languages — have defaults that work. A change that adds a setting should explain why a good default is impossible.
 
 A pull request that breaks one of these will be declined even if the feature is nice. Open an issue first if you are not sure.
 

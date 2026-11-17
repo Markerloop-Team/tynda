@@ -91,6 +91,43 @@ static void LoadHotkey(void) {
 }
 static NSString *HotkeyName(void) { return HotkeyNameFor(gHotkey) ?: @"fn"; }
 
+#pragma mark - The languages Tynda listens for
+
+// Without a list the model sometimes hears a cough as a sentence in a language nobody in the room speaks.
+// So Tynda listens only for the languages picked in the setup window: English, Russian and Kazakh at first.
+static NSArray<NSArray<NSString *> *> *AllLanguages(void) {
+    static NSArray *all;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        all = @[@[@"af", @"Afrikaans"], @[@"ar", @"Arabic"], @[@"hy", @"Armenian"], @[@"az", @"Azerbaijani"], @[@"be", @"Belarusian"],
+                @[@"bs", @"Bosnian"], @[@"bg", @"Bulgarian"], @[@"ca", @"Catalan"], @[@"zh", @"Chinese"], @[@"hr", @"Croatian"],
+                @[@"cs", @"Czech"], @[@"da", @"Danish"], @[@"nl", @"Dutch"], @[@"en", @"English"], @[@"et", @"Estonian"],
+                @[@"fi", @"Finnish"], @[@"fr", @"French"], @[@"gl", @"Galician"], @[@"ka", @"Georgian"], @[@"de", @"German"],
+                @[@"el", @"Greek"], @[@"he", @"Hebrew"], @[@"hi", @"Hindi"], @[@"hu", @"Hungarian"], @[@"is", @"Icelandic"],
+                @[@"id", @"Indonesian"], @[@"it", @"Italian"], @[@"ja", @"Japanese"], @[@"kn", @"Kannada"], @[@"kk", @"Kazakh"],
+                @[@"ko", @"Korean"], @[@"lv", @"Latvian"], @[@"lt", @"Lithuanian"], @[@"mk", @"Macedonian"], @[@"ms", @"Malay"],
+                @[@"mr", @"Marathi"], @[@"mi", @"Maori"], @[@"mn", @"Mongolian"], @[@"ne", @"Nepali"], @[@"no", @"Norwegian"],
+                @[@"fa", @"Persian"], @[@"pl", @"Polish"], @[@"pt", @"Portuguese"], @[@"ro", @"Romanian"], @[@"ru", @"Russian"],
+                @[@"sr", @"Serbian"], @[@"sk", @"Slovak"], @[@"sl", @"Slovenian"], @[@"es", @"Spanish"], @[@"sw", @"Swahili"],
+                @[@"sv", @"Swedish"], @[@"tl", @"Tagalog"], @[@"tg", @"Tajik"], @[@"ta", @"Tamil"], @[@"tt", @"Tatar"],
+                @[@"th", @"Thai"], @[@"tr", @"Turkish"], @[@"tk", @"Turkmen"], @[@"uk", @"Ukrainian"], @[@"ur", @"Urdu"],
+                @[@"uz", @"Uzbek"], @[@"vi", @"Vietnamese"], @[@"cy", @"Welsh"]];
+    });
+    return all;
+}
+
+static NSString *LanguageName(NSString *code) {
+    for (NSArray<NSString *> *l in AllLanguages()) if ([l[0] isEqualToString:code]) return l[1];
+    return code;
+}
+
+static NSArray<NSString *> *ChosenLanguages(void) {
+    NSArray *saved = [NSUserDefaults.standardUserDefaults arrayForKey:@"languages"];
+    NSMutableArray *ok = [NSMutableArray new];
+    for (id code in saved) if ([code isKindOfClass:NSString.class] && ![LanguageName(code) isEqualToString:code]) [ok addObject:code];
+    return ok.count ? ok : @[@"en", @"ru", @"kk"];
+}
+
 #pragma mark - Dictation: microphone into memory, with a live level for the waveform
 
 @interface DictationRecorder : NSObject
@@ -209,6 +246,7 @@ static NSString *HotkeyName(void) { return HotkeyNameFor(gHotkey) ?: @"fn"; }
 @property(atomic) BOOL ready;
 @property(nonatomic, copy) void (^onReady)(void);
 - (void)start;
+- (void)restart;  // picks up a changed list of languages
 - (void)transcribe:(NSString *)path completion:(void (^)(NSString *text, NSString *error))done;
 @end
 
@@ -231,12 +269,8 @@ static NSString *HotkeyName(void) { return HotkeyNameFor(gHotkey) ?: @"fn"; }
     NSTask *task = [NSTask new];
     task.executableURL = [NSURL fileURLWithPath:python];
     task.arguments = @[[ScriptsDir() URLByAppendingPathComponent:@"dictate_server.py"].path];
-    // People mostly speak the languages their Mac is set up in. The engine uses that only to break
-    // a tie between close relatives on a short phrase; it is a hint, not a setting.
-    NSMutableOrderedSet<NSString *> *hint = [NSMutableOrderedSet new];
-    for (NSString *tag in NSLocale.preferredLanguages) [hint addObject:[tag componentsSeparatedByString:@"-"].firstObject.lowercaseString];
     NSMutableDictionary *env = [NSProcessInfo.processInfo.environment mutableCopy];
-    env[@"TYNDA_HINT"] = [hint.array componentsJoinedByString:@","];
+    env[@"TYNDA_LANGS"] = [ChosenLanguages() componentsJoinedByString:@","];
     task.environment = env;
     NSPipe *inPipe = [NSPipe pipe], *outPipe = [NSPipe pipe];
     task.standardInput = inPipe;
@@ -259,6 +293,21 @@ static NSString *HotkeyName(void) { return HotkeyNameFor(gHotkey) ?: @"fn"; }
     }
     _task = task;
     _stdin = inPipe.fileHandleForWriting;
+}
+
+- (void)restart {
+    NSTask *old = _task;
+    _task = nil;   // so that the old engine's exit is not taken for a crash
+    _stdin = nil;
+    self.ready = NO;
+    if (_current) {  // a phrase in flight goes back to the head of the line
+        [_queue insertObject:_current atIndex:0];
+        _current = nil;
+        _token++;
+    }
+    [old terminate];
+    [self start];
+    [self pump];
 }
 
 - (void)died:(NSTask *)task {
@@ -702,15 +751,16 @@ static NSView *KeyCap(NSString *text) {
 @property(nonatomic, copy) BOOL (^engineInstalled)(void);
 @property(nonatomic, copy) BOOL (^listening)(void);
 @property(nonatomic, copy) void (^hotkeyChanged)(void);
+@property(nonatomic, copy) void (^languagesChanged)(void);
 - (void)show;
 + (BOOL)needed;
 @end
 
-static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
+static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kButtonW = 128, kDetailY = 26, kDetailH = 30;
 
 @implementation Onboarding {
     NSWindow *_window;
-    SetupRow *_mic, *_access, *_fn, *_engine;
+    SetupRow *_mic, *_access, *_fn, *_lang, *_engine;
     NSTextField *_tryLabel, *_tryField;
     NSSwitch *_login;
     NSTimer *_timer;
@@ -738,10 +788,10 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     row.dot = [[StatusDot alloc] initWithFrame:NSMakeRect(14, (kRowH - 28) / 2, 28, 28)];
     [card addSubview:row.dot];
     NSTextField *t = Lbl(title, 14, NSFontWeightSemibold, NSColor.whiteColor);
-    t.frame = NSMakeRect(54, 11, w - 54 - kButtonW - 28, 18);
+    t.frame = NSMakeRect(54, 8, w - 54 - kButtonW - 28, 18);
     [card addSubview:t];
     row.detail = WrapLbl(@"", 12.5, NSFontWeightRegular, Wh(0.62), 2);
-    row.detail.frame = NSMakeRect(54, 30, w - 54 - 16, 32);
+    row.detail.frame = NSMakeRect(54, kDetailY, w - 54 - 16, kDetailH);
     [card addSubview:row.detail];
     __weak Onboarding *weakSelf = self;
     row.button = Pill(NSMakeRect(w - 14 - kButtonW, (kRowH - 34) / 2, kButtonW, 34), @"", NO, NO, ^{
@@ -781,8 +831,8 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     NSTextField *title = Lbl(L(@"Welcome to Tynda", @"Добро пожаловать в Tynda"), 28, NSFontWeightBold, NSColor.whiteColor);
     title.frame = NSMakeRect(kSetupPad, 128, w, 36);
     [root addSubview:title];
-    NSTextField *sub = Lbl(L(@"Talk instead of typing. Four things to set up — it takes a minute.",
-                             @"Говори вместо того, чтобы печатать. Настроить нужно четыре вещи — это минута."),
+    NSTextField *sub = Lbl(L(@"Talk instead of typing. A few things to set up — it takes a minute.",
+                             @"Говори вместо того, чтобы печатать. Настроить нужно несколько вещей — это минута."),
                            14, NSFontWeightRegular, Wh(0.62));
     sub.frame = NSMakeRect(kSetupPad, 168, w, 20);
     [root addSubview:sub];
@@ -795,11 +845,13 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
 
     y = 204;
     _mic = [self row:L(@"Microphone", @"Микрофон") action:@selector(micAction) at:y in:root];
-    y += kRowH + 10;
+    y += kRowH + kRowGap;
     _access = [self row:L(@"Accessibility", @"Универсальный доступ") action:@selector(accessAction) at:y in:root];
-    y += kRowH + 10;
+    y += kRowH + kRowGap;
     _fn = [self row:L(@"Dictation key", @"Клавиша диктовки") action:@selector(keyAction) at:y in:root];
-    y += kRowH + 10;
+    y += kRowH + kRowGap;
+    _lang = [self row:L(@"Languages", @"Языки") action:@selector(languagesAction) at:y in:root];
+    y += kRowH + kRowGap;
     _engine = [self row:L(@"Speech model", @"Модель распознавания речи") action:@selector(engineAction) at:y in:root];
     y += kRowH + 18;
 
@@ -877,7 +929,7 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     row.button.hidden = !showButton;
     if (button) row.buttonLabel.stringValue = button;
     CGFloat w = kSetupW - 2 * kSetupPad;
-    row.detail.frame = NSMakeRect(54, 30, w - 54 - 16 - (showButton ? kButtonW + 10 : 0), 32);
+    row.detail.frame = NSMakeRect(54, kDetailY, w - 54 - 16 - (showButton ? kButtonW + 10 : 0), kDetailH);
 }
 
 - (void)refresh {
@@ -907,7 +959,15 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     _fn.detail.stringValue = keyDetail;
     _fn.button.hidden = NO;  // always there: the key can be changed at any time
     _fn.buttonLabel.stringValue = _keyMonitor ? L(@"Cancel", @"Отмена") : L(@"Change key", @"Сменить");
-    _fn.detail.frame = NSMakeRect(54, 30, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, 32);
+    _fn.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, kDetailH);
+
+    NSMutableArray *names = [NSMutableArray new];
+    for (NSString *code in ChosenLanguages()) [names addObject:LanguageName(code)];
+    _lang.dot.state = StepDone;
+    _lang.detail.stringValue = [names componentsJoinedByString:@" · "];
+    _lang.button.hidden = NO;
+    _lang.buttonLabel.stringValue = L(@"Change", @"Изменить");
+    _lang.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, kDetailH);
 
     BOOL installed = self.engineInstalled && self.engineInstalled();
     BOOL ready = self.engineReady && self.engineReady();
@@ -950,6 +1010,42 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     BOOL ok = _login.state == NSControlStateValueOn ? [SMAppService.mainAppService registerAndReturnError:&err]
                                                     : [SMAppService.mainAppService unregisterAndReturnError:&err];
     Log(@"setup: start at login → %@%@", _login.state == NSControlStateValueOn ? @"on" : @"off", ok ? @"" : [NSString stringWithFormat:@" failed: %@", err.localizedDescription]);
+    [self refresh];
+}
+
+// A menu of languages with check marks: the ones Tynda listens for first, then the rest by name.
+- (void)languagesAction {
+    NSArray<NSString *> *chosen = ChosenLanguages();
+    NSMenu *menu = [NSMenu new];
+    NSMenuItem *head = [menu addItemWithTitle:L(@"Tynda listens for:", @"Tynda слушает:") action:nil keyEquivalent:@""];
+    head.enabled = NO;
+    for (NSString *code in chosen) [self addLanguage:code to:menu checked:YES];
+    [menu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *more = [menu addItemWithTitle:L(@"Add a language:", @"Добавить язык:") action:nil keyEquivalent:@""];
+    more.enabled = NO;
+    for (NSArray<NSString *> *l in AllLanguages()) if (![chosen containsObject:l[0]]) [self addLanguage:l[0] to:menu checked:NO];
+    [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, _lang.button.bounds.size.height + 4) inView:_lang.button];
+}
+
+- (void)addLanguage:(NSString *)code to:(NSMenu *)menu checked:(BOOL)checked {
+    NSMenuItem *item = [menu addItemWithTitle:LanguageName(code) action:@selector(toggleLanguage:) keyEquivalent:@""];
+    item.target = self;
+    item.representedObject = code;
+    item.state = checked ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)toggleLanguage:(NSMenuItem *)item {
+    NSMutableArray<NSString *> *chosen = [ChosenLanguages() mutableCopy];
+    NSString *code = item.representedObject;
+    if ([chosen containsObject:code]) {
+        if (chosen.count == 1) return;  // at least one language has to stay
+        [chosen removeObject:code];
+    } else {
+        [chosen addObject:code];
+    }
+    [NSUserDefaults.standardUserDefaults setObject:chosen forKey:@"languages"];
+    Log(@"setup: languages are now %@", [chosen componentsJoinedByString:@","]);
+    if (self.languagesChanged) self.languagesChanged();
     [self refresh];
 }
 
@@ -1141,6 +1237,11 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         _onboarding.engineInstalled = ^BOOL { return PythonPath() != nil; };
         _onboarding.engineReady = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_transcriber.ready : NO; };
         _onboarding.listening = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_tap != NULL : NO; };
+        _onboarding.languagesChanged = ^{
+            AppDelegate *me = weakSelf;
+            [me->_transcriber restart];  // the engine reads the list when it starts
+            [me refreshDictationMenu];
+        };
         _onboarding.hotkeyChanged = ^{
             AppDelegate *me = weakSelf;
             [me cancelDictation:NO];

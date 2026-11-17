@@ -6,7 +6,7 @@ Thanks for wanting to help. Tynda is one Objective-C file, one Python file and t
 
 1. **Nothing is saved.** No history, no audio, no text on disk. The only file is a log of timings.
 2. **Nothing leaves the Mac.** No network calls after the model is downloaded, no telemetry, no accounts.
-3. **Nothing to configure.** Hold fn, speak, get text. A change that adds a setting should explain why a good default is impossible.
+3. **Nothing to configure before the first sentence.** Hold fn, speak, get text. The two things that can be changed — the key and the languages — have defaults that work. A change that adds a setting should explain why a good default is impossible.
 
 A pull request that breaks one of these will be declined even if the feature is nice. Open an issue first if you are not sure.
 
@@ -54,5 +54,14 @@ printf '{"path": "/path/to/some.wav"}\n' | ~/Library/Application\ Support/Tynda/
 - Say what you tested and on which Mac and macOS version. "Not tested on X" is a fine thing to write.
 - Match the code around you: plain C-style Objective-C, comments that say why.
 - Interface text goes through `L(@"English", @"Русский")`; if you do not speak Russian, leave the second string the same as the first and say so.
+
+## Releases
+
+Maintainers cut releases; contributors only add a line under *Unreleased* in `CHANGELOG.md`.
+
+1. A release pull request moves the *Unreleased* notes into a new `## [x.y.z] — date` section and sets `VERSION`.
+2. After it is merged, `tools/release.sh` on an up-to-date `main` checks that `VERSION`, the changelog and the build agree, tags `vx.y.z` and publishes the GitHub release with those notes. `tools/release.sh --dry-run` shows what it would do.
+
+Versions follow Semantic Versioning. While Tynda is 0.x, releases are marked as pre-releases.
 
 By contributing you agree that your work is released under the [MIT license](LICENSE).

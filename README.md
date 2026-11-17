@@ -2,6 +2,8 @@
 
 # Tynda
 
+[![Release](https://img.shields.io/github/v/release/Markerloop-Team/tynda?include_prereleases&label=release)](https://github.com/Markerloop-Team/tynda/releases) [![Build](https://github.com/Markerloop-Team/tynda/actions/workflows/build.yml/badge.svg)](https://github.com/Markerloop-Team/tynda/actions/workflows/build.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Hold fn. Speak. It types.** A small, free, open-source Mac app that lets you talk instead of typing. Your voice is turned into text on your own Mac and typed wherever your cursor is.
 
 *Tynda* (тыңда) is Kazakh for "listen". Made by [Markerloop](https://markerloop.com) · [tynda.markerloop.com](https://tynda.markerloop.com)
@@ -15,8 +17,11 @@ Free to use, open source, MIT. Pull requests are welcome — see [Contributing](
 - **Hold fn** and talk. Let go — the text appears where your cursor is, about a second later.
 - **Double-tap fn** for hands-free. Talk as long as you like, press fn again to finish.
 - **Esc** throws it away.
+- **fn taken?** Pick another key in the setup window: Option, Control, the right Command or an F-key. Choose one you do not use for shortcuts.
 
-A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, nothing to configure. You speak the way you normally speak and get what you said.
+A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, and the defaults work from the first sentence.
+
+Tynda listens for English, Russian and Kazakh out of the box. Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak.
 
 ## Nothing is saved, nothing leaves your Mac
 
@@ -34,7 +39,7 @@ A small black island with a live waveform shows at the top of the screen while T
 | Memory | 8 GB minimum, 16 GB recommended. The model stays loaded (about 2 GB). |
 | Disk | about 3 GB (model 1.6 GB + Python packages) |
 | Tools | Xcode Command Line Tools, and Python 3.10–3.13 or [uv](https://docs.astral.sh/uv/) |
-| Keyboard | The fn / 🌐 key set to "Do Nothing" in System Settings → Keyboard |
+| Keyboard | The fn / 🌐 key set to "Do Nothing" in System Settings → Keyboard — or another key of your choice |
 
 ## Install
 
@@ -50,12 +55,13 @@ When it finishes, a setup window opens and walks you through the rest, with a li
 
 1. **Microphone** — to hear you.
 2. **Accessibility** — to notice the fn key and to type the text for you.
-3. **The fn key** — it has to be free ("Do Nothing" in Keyboard settings).
-4. **Speech model** — loads in a few seconds.
+3. **Dictation key** — fn has to be free ("Do Nothing" in Keyboard settings), or pick another key right there.
+4. **Languages** — English, Russian and Kazakh to begin with; change the list any time.
+5. **Speech model** — loads in a few seconds.
 
 Then it gives you a text field to try your first dictation in. You can open this window again any time: Tynda icon in the menu bar → *Setup…*, or just open Tynda again from Applications.
 
-To update: `git pull && ./install.sh`. Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
+To update: `git pull && ./install.sh`. What changed in each version is in [CHANGELOG.md](CHANGELOG.md) and on the [releases page](https://github.com/Markerloop-Team/tynda/releases). Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
 
 ## Uninstall
 
@@ -77,7 +83,6 @@ The only file Tynda writes is a diagnostics log, `~/Library/Logs/Tynda.log`. It 
 
 - Not signed or notarised: source install only, permissions reset on every rebuild.
 - The text is pasted through the clipboard (your clipboard is restored half a second later).
-- The hotkey is fixed to fn.
 - If the menu bar is full, macOS may hide the Tynda icon. Dictation still works; open Tynda again from Applications to get to the setup window.
 - Tested on macOS 26 only.
 
@@ -86,7 +91,6 @@ The only file Tynda writes is a diagnostics log, `~/Library/Logs/Tynda.log`. It 
 Tynda is small on purpose, and that is the main thing to protect. Ideas that fit:
 
 - a signed, notarised download, so nobody has to build from source;
-- a hotkey other than fn;
 - better punctuation and style for more ways of speaking (`STYLE` in `dictate_server.py`);
 - making it work, or fail clearly, on Macs it has not met yet.
 

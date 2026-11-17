@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build the app on macOS
+    runs-on: macos-latest   # Apple silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scripts parse
+        run: |
+          zsh -n install.sh
+          zsh -n uninstall.sh
+          zsh -n build.sh
+          zsh -n tools/release.sh
+          python3 -m py_compile dictate_server.py
+
+      - name: Build Tynda.app
+        run: ./build.sh
+
+      - name: The bundle is complete and carries the version
+        run: |
+          test -x Tynda.app/Contents/MacOS/Tynda
+          test -f Tynda.app/Contents/Resources/dictate_server.py
+          test -f Tynda.app/Contents/Resources/AppIcon.icns
+          built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Tynda.app/Contents/Info.plist)"
+          want="$(cat VERSION)"
+          echo "built $built, VERSION says $want"
+          test "$built" = "$want"
+          codesign --verify Tynda.app
+
+      - name: The changelog knows this version
+        run: grep -q "^## \[$(cat VERSION)\]" CHANGELOG.md

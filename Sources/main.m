@@ -49,6 +49,85 @@ static void Log(NSString *format, ...) {
     [h closeFile];
 }
 
+#pragma mark - The dictation key
+
+static const CGKeyCode kKeyFn = 63, kKeyGlobe = 179, kKeyEsc = 53, kKeyV = 9;
+
+// fn unless the user picked another key in the setup window. Only keys that type nothing qualify:
+// fn, Option, Control, the right Command, and the F-keys.
+static NSString *HotkeyNameFor(CGKeyCode key) {
+    switch (key) {
+        case 63: return @"fn";
+        case 61: return L(@"right ⌥", @"правый ⌥");
+        case 58: return L(@"left ⌥", @"левый ⌥");
+        case 62: return L(@"right ⌃", @"правый ⌃");
+        case 59: return L(@"left ⌃", @"левый ⌃");
+        case 54: return L(@"right ⌘", @"правый ⌘");
+        default: break;
+    }
+    static const CGKeyCode fkeys[20] = {122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90};
+    for (int i = 0; i < 20; i++) if (fkeys[i] == key) return [NSString stringWithFormat:@"F%d", i + 1];
+    return nil;
+}
+
+// The modifier flag that tells whether the key is down; 0 for an F-key, which sends key-down and key-up.
+static CGEventFlags HotkeyFlag(CGKeyCode key) {
+    switch (key) {
+        case 63: return kCGEventFlagMaskSecondaryFn;
+        case 61: case 58: return kCGEventFlagMaskAlternate;
+        case 62: case 59: return kCGEventFlagMaskControl;
+        case 54: return kCGEventFlagMaskCommand;
+        default: return 0;
+    }
+}
+
+static volatile CGKeyCode gHotkey = 63;     // read on the key-listener thread
+static volatile BOOL gChoosingHotkey = NO;  // the setup window is waiting for a key press: dictation stands aside
+
+static void LoadHotkey(void) {
+    id saved = [NSUserDefaults.standardUserDefaults objectForKey:@"hotkey"];
+    CGKeyCode key = saved ? (CGKeyCode)[saved integerValue] : kKeyFn;
+    gHotkey = HotkeyNameFor(key) ? key : kKeyFn;
+}
+static NSString *HotkeyName(void) { return HotkeyNameFor(gHotkey) ?: @"fn"; }
+
+#pragma mark - The languages Tynda listens for
+
+// Without a list the model sometimes hears a cough as a sentence in a language nobody in the room speaks.
+// So Tynda listens only for the languages picked in the setup window: English, Russian and Kazakh at first.
+static NSArray<NSArray<NSString *> *> *AllLanguages(void) {
+    static NSArray *all;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        all = @[@[@"af", @"Afrikaans"], @[@"ar", @"Arabic"], @[@"hy", @"Armenian"], @[@"az", @"Azerbaijani"], @[@"be", @"Belarusian"],
+                @[@"bs", @"Bosnian"], @[@"bg", @"Bulgarian"], @[@"ca", @"Catalan"], @[@"zh", @"Chinese"], @[@"hr", @"Croatian"],
+                @[@"cs", @"Czech"], @[@"da", @"Danish"], @[@"nl", @"Dutch"], @[@"en", @"English"], @[@"et", @"Estonian"],
+                @[@"fi", @"Finnish"], @[@"fr", @"French"], @[@"gl", @"Galician"], @[@"ka", @"Georgian"], @[@"de", @"German"],
+                @[@"el", @"Greek"], @[@"he", @"Hebrew"], @[@"hi", @"Hindi"], @[@"hu", @"Hungarian"], @[@"is", @"Icelandic"],
+                @[@"id", @"Indonesian"], @[@"it", @"Italian"], @[@"ja", @"Japanese"], @[@"kn", @"Kannada"], @[@"kk", @"Kazakh"],
+                @[@"ko", @"Korean"], @[@"lv", @"Latvian"], @[@"lt", @"Lithuanian"], @[@"mk", @"Macedonian"], @[@"ms", @"Malay"],
+                @[@"mr", @"Marathi"], @[@"mi", @"Maori"], @[@"mn", @"Mongolian"], @[@"ne", @"Nepali"], @[@"no", @"Norwegian"],
+                @[@"fa", @"Persian"], @[@"pl", @"Polish"], @[@"pt", @"Portuguese"], @[@"ro", @"Romanian"], @[@"ru", @"Russian"],
+                @[@"sr", @"Serbian"], @[@"sk", @"Slovak"], @[@"sl", @"Slovenian"], @[@"es", @"Spanish"], @[@"sw", @"Swahili"],
+                @[@"sv", @"Swedish"], @[@"tl", @"Tagalog"], @[@"tg", @"Tajik"], @[@"ta", @"Tamil"], @[@"tt", @"Tatar"],
+                @[@"th", @"Thai"], @[@"tr", @"Turkish"], @[@"tk", @"Turkmen"], @[@"uk", @"Ukrainian"], @[@"ur", @"Urdu"],
+                @[@"uz", @"Uzbek"], @[@"vi", @"Vietnamese"], @[@"cy", @"Welsh"]];
+    });
+    return all;
+}
+
+static NSString *LanguageName(NSString *code) {
+    for (NSArray<NSString *> *l in AllLanguages()) if ([l[0] isEqualToString:code]) return l[1];
+    return code;
+}
+
+static NSArray<NSString *> *ChosenLanguages(void) {
+    NSArray *saved = [NSUserDefaults.standardUserDefaults arrayForKey:@"languages"];
+    NSMutableArray *ok = [NSMutableArray new];
+    for (id code in saved) if ([code isKindOfClass:NSString.class] && ![LanguageName(code) isEqualToString:code]) [ok addObject:code];
+    return ok.count ? ok : @[@"en", @"ru", @"kk"];
+}
+
 #pragma mark - Dictation: microphone into memory, with a live level for the waveform
 
 @interface DictationRecorder : NSObject
@@ -167,6 +246,7 @@ static void Log(NSString *format, ...) {
 @property(atomic) BOOL ready;
 @property(nonatomic, copy) void (^onReady)(void);
 - (void)start;
+- (void)restart;  // picks up a changed list of languages
 - (void)transcribe:(NSString *)path completion:(void (^)(NSString *text, NSString *error))done;
 @end
 
@@ -189,12 +269,8 @@ static void Log(NSString *format, ...) {
     NSTask *task = [NSTask new];
     task.executableURL = [NSURL fileURLWithPath:python];
     task.arguments = @[[ScriptsDir() URLByAppendingPathComponent:@"dictate_server.py"].path];
-    // People mostly speak the languages their Mac is set up in. The engine uses that only to break
-    // a tie between close relatives on a short phrase; it is a hint, not a setting.
-    NSMutableOrderedSet<NSString *> *hint = [NSMutableOrderedSet new];
-    for (NSString *tag in NSLocale.preferredLanguages) [hint addObject:[tag componentsSeparatedByString:@"-"].firstObject.lowercaseString];
     NSMutableDictionary *env = [NSProcessInfo.processInfo.environment mutableCopy];
-    env[@"TYNDA_HINT"] = [hint.array componentsJoinedByString:@","];
+    env[@"TYNDA_LANGS"] = [ChosenLanguages() componentsJoinedByString:@","];
     task.environment = env;
     NSPipe *inPipe = [NSPipe pipe], *outPipe = [NSPipe pipe];
     task.standardInput = inPipe;
@@ -217,6 +293,21 @@ static void Log(NSString *format, ...) {
     }
     _task = task;
     _stdin = inPipe.fileHandleForWriting;
+}
+
+- (void)restart {
+    NSTask *old = _task;
+    _task = nil;   // so that the old engine's exit is not taken for a crash
+    _stdin = nil;
+    self.ready = NO;
+    if (_current) {  // a phrase in flight goes back to the head of the line
+        [_queue insertObject:_current atIndex:0];
+        _current = nil;
+        _token++;
+    }
+    [old terminate];
+    [self start];
+    [self pump];
 }
 
 - (void)died:(NSTask *)task {
@@ -366,8 +457,8 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
     CGFloat left = pad + 8 + 10, right = b.size.width - pad;
     if (self.mode == IslandLocked) {
-        CGFloat hintW = 150;
-        [self drawText:L(@"fn — stop · esc — cancel", @"fn — стоп · esc — отмена") inRect:NSMakeRect(right - hintW, 0, hintW, b.size.height) alpha:0.55 align:NSTextAlignmentRight];
+        CGFloat hintW = 190;
+        [self drawText:[NSString stringWithFormat:L(@"%@ — stop · esc — cancel", @"%@ — стоп · esc — отмена"), HotkeyName()] inRect:NSMakeRect(right - hintW, 0, hintW, b.size.height) alpha:0.55 align:NSTextAlignmentRight];
         right -= hintW + 8;
     }
     CGFloat barW = 3, gap = 2.5, maxH = b.size.height - 16;
@@ -403,7 +494,7 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 - (void)show:(IslandMode)mode message:(NSString *)message levelSource:(float (^)(void))level {
     _generation++;
-    CGFloat w = mode == IslandLocked ? 330 : (mode == IslandRecording ? 180 : (mode == IslandMessage ? 280 : 96)), h = 38;
+    CGFloat w = mode == IslandLocked ? 370 : (mode == IslandRecording ? 180 : (mode == IslandMessage ? 280 : 96)), h = 38;
     if (!_panel) {
         _panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, w, h)
                                             styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
@@ -659,18 +750,22 @@ static NSView *KeyCap(NSString *text) {
 @property(nonatomic, copy) BOOL (^engineReady)(void);
 @property(nonatomic, copy) BOOL (^engineInstalled)(void);
 @property(nonatomic, copy) BOOL (^listening)(void);
+@property(nonatomic, copy) void (^hotkeyChanged)(void);
+@property(nonatomic, copy) void (^languagesChanged)(void);
 - (void)show;
 + (BOOL)needed;
 @end
 
-static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
+static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kButtonW = 128, kDetailY = 26, kDetailH = 30;
 
 @implementation Onboarding {
     NSWindow *_window;
-    SetupRow *_mic, *_access, *_fn, *_engine;
+    SetupRow *_mic, *_access, *_fn, *_lang, *_engine;
     NSTextField *_tryLabel, *_tryField;
     NSSwitch *_login;
     NSTimer *_timer;
+    id _keyMonitor;
+    NSString *_keyNote;
 }
 
 + (BOOL)micGranted { return [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusAuthorized; }
@@ -693,10 +788,10 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     row.dot = [[StatusDot alloc] initWithFrame:NSMakeRect(14, (kRowH - 28) / 2, 28, 28)];
     [card addSubview:row.dot];
     NSTextField *t = Lbl(title, 14, NSFontWeightSemibold, NSColor.whiteColor);
-    t.frame = NSMakeRect(54, 11, w - 54 - kButtonW - 28, 18);
+    t.frame = NSMakeRect(54, 8, w - 54 - kButtonW - 28, 18);
     [card addSubview:t];
     row.detail = WrapLbl(@"", 12.5, NSFontWeightRegular, Wh(0.62), 2);
-    row.detail.frame = NSMakeRect(54, 30, w - 54 - 16, 32);
+    row.detail.frame = NSMakeRect(54, kDetailY, w - 54 - 16, kDetailH);
     [card addSubview:row.detail];
     __weak Onboarding *weakSelf = self;
     row.button = Pill(NSMakeRect(w - 14 - kButtonW, (kRowH - 34) / 2, kButtonW, 34), @"", NO, NO, ^{
@@ -736,19 +831,27 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     NSTextField *title = Lbl(L(@"Welcome to Tynda", @"Добро пожаловать в Tynda"), 28, NSFontWeightBold, NSColor.whiteColor);
     title.frame = NSMakeRect(kSetupPad, 128, w, 36);
     [root addSubview:title];
-    NSTextField *sub = Lbl(L(@"Talk instead of typing. Four things to set up — it takes a minute.",
-                             @"Говори вместо того, чтобы печатать. Настроить нужно четыре вещи — это минута."),
+    NSTextField *sub = Lbl(L(@"Talk instead of typing. A few things to set up — it takes a minute.",
+                             @"Говори вместо того, чтобы печатать. Настроить нужно несколько вещей — это минута."),
                            14, NSFontWeightRegular, Wh(0.62));
     sub.frame = NSMakeRect(kSetupPad, 168, w, 20);
     [root addSubview:sub];
 
+    NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
+    NSTextField *versionLabel = Lbl([@"Tynda " stringByAppendingString:version], 11, NSFontWeightMedium, Wh(0.35));
+    versionLabel.alignment = NSTextAlignmentRight;
+    versionLabel.frame = NSMakeRect(kSetupW - kSetupPad - 140, 16, 140, 14);
+    [root addSubview:versionLabel];
+
     y = 204;
     _mic = [self row:L(@"Microphone", @"Микрофон") action:@selector(micAction) at:y in:root];
-    y += kRowH + 10;
+    y += kRowH + kRowGap;
     _access = [self row:L(@"Accessibility", @"Универсальный доступ") action:@selector(accessAction) at:y in:root];
-    y += kRowH + 10;
-    _fn = [self row:L(@"The fn key", @"Клавиша fn") action:@selector(fnAction) at:y in:root];
-    y += kRowH + 10;
+    y += kRowH + kRowGap;
+    _fn = [self row:L(@"Dictation key", @"Клавиша диктовки") action:@selector(keyAction) at:y in:root];
+    y += kRowH + kRowGap;
+    _lang = [self row:L(@"Languages", @"Языки") action:@selector(languagesAction) at:y in:root];
+    y += kRowH + kRowGap;
     _engine = [self row:L(@"Speech model", @"Модель распознавания речи") action:@selector(engineAction) at:y in:root];
     y += kRowH + 18;
 
@@ -768,12 +871,13 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     _tryField.cell.wraps = YES;
     _tryField.cell.scrollable = NO;
     _tryField.placeholderAttributedString = [[NSAttributedString alloc]
-        initWithString:L(@"Click here, hold fn and say something", @"Нажми сюда, удерживай fn и скажи что-нибудь")
+        initWithString:[NSString stringWithFormat:L(@"Click here, hold %@ and say something", @"Нажми сюда, удерживай %@ и скажи что-нибудь"), HotkeyName()]
             attributes:@{NSForegroundColorAttributeName: Wh(0.42), NSFontAttributeName: [NSFont systemFontOfSize:14]}];
     [well addSubview:_tryField];
     [try addSubview:well];
     CGFloat x = 18;
-    NSArray *hints = @[@[@[@"fn"], L(@"hold to talk", @"удерживать")], @[@[@"fn", @"fn"], L(@"hands-free", @"без удержания")], @[@[@"esc"], L(@"cancel", @"отмена")]];
+    NSString *hot = HotkeyName();
+    NSArray *hints = @[@[@[hot], L(@"hold to talk", @"удерживать")], @[@[hot, hot], L(@"hands-free", @"без удержания")], @[@[@"esc"], L(@"cancel", @"отмена")]];
     for (NSArray *hint in hints) {
         for (NSString *key in hint[0]) {
             NSView *cap = KeyCap(key);
@@ -825,7 +929,7 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     row.button.hidden = !showButton;
     if (button) row.buttonLabel.stringValue = button;
     CGFloat w = kSetupW - 2 * kSetupPad;
-    row.detail.frame = NSMakeRect(54, 30, w - 54 - 16 - (showButton ? kButtonW + 10 : 0), 32);
+    row.detail.frame = NSMakeRect(54, kDetailY, w - 54 - 16 - (showButton ? kButtonW + 10 : 0), kDetailH);
 }
 
 - (void)refresh {
@@ -838,17 +942,32 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
 
     BOOL axOK = AXIsProcessTrusted();
     [self set:_access ok:axOK busy:NO
-       detail:axOK ? L(@"Tynda notices fn and can type for you.", @"Tynda видит fn и может печатать за тебя.")
-                   : L(@"To notice fn and to type for you. Turn on Tynda in the list that opens.",
-                       @"Чтобы замечать fn и печатать за тебя. В открывшемся списке включи Tynda.")
+       detail:axOK ? L(@"Tynda notices the key and can type for you.", @"Tynda видит клавишу и может печатать за тебя.")
+                   : L(@"To notice the key and to type for you. Turn on Tynda in the list that opens.",
+                       @"Чтобы замечать клавишу и печатать за тебя. В открывшемся списке включи Tynda.")
        button:L(@"Open Settings", @"Открыть настройки")];
 
-    BOOL fnOK = [Onboarding fnFree];
-    [self set:_fn ok:fnOK busy:NO
-       detail:fnOK ? L(@"Free for dictation.", @"Свободна для диктовки.")
-                   : L(@"macOS uses fn for something else. Set “Press 🌐 key to” to “Do Nothing”.",
-                       @"macOS занимает fn другим действием. Поставь «Нажатие клавиши 🌐» → «Ничего не делать».")
-       button:L(@"Open Settings", @"Открыть настройки")];
+    // The dictation key: fn by default; the button lets the user pick another one.
+    BOOL fnTaken = gHotkey == kKeyFn && ![Onboarding fnFree];
+    NSString *keyDetail;
+    if (_keyMonitor) keyDetail = _keyNote ?: L(@"Press the key you want to hold: fn, ⌥, ⌃, right ⌘ or an F-key. Esc — keep the current one.",
+                                               @"Нажми клавишу, которую будешь удерживать: fn, ⌥, ⌃, правый ⌘ или F-клавишу. Esc — оставить как есть.");
+    else if (fnTaken) keyDetail = L(@"macOS uses fn for something else. Set “Press 🌐 key to” to “Do Nothing” in Keyboard settings, or pick another key.",
+                                    @"macOS занимает fn другим действием. Поставь «Нажатие клавиши 🌐» → «Ничего не делать» в настройках клавиатуры или выбери другую клавишу.");
+    else keyDetail = [NSString stringWithFormat:L(@"%@ — hold it and talk.", @"%@ — удерживай и говори."), HotkeyName()];
+    _fn.dot.state = _keyMonitor ? StepBusy : (fnTaken ? StepTodo : StepDone);
+    _fn.detail.stringValue = keyDetail;
+    _fn.button.hidden = NO;  // always there: the key can be changed at any time
+    _fn.buttonLabel.stringValue = _keyMonitor ? L(@"Cancel", @"Отмена") : L(@"Change key", @"Сменить");
+    _fn.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, kDetailH);
+
+    NSMutableArray *names = [NSMutableArray new];
+    for (NSString *code in ChosenLanguages()) [names addObject:LanguageName(code)];
+    _lang.dot.state = StepDone;
+    _lang.detail.stringValue = [names componentsJoinedByString:@" · "];
+    _lang.button.hidden = NO;
+    _lang.buttonLabel.stringValue = L(@"Change", @"Изменить");
+    _lang.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, kDetailH);
 
     BOOL installed = self.engineInstalled && self.engineInstalled();
     BOOL ready = self.engineReady && self.engineReady();
@@ -894,7 +1013,97 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
     [self refresh];
 }
 
-- (void)fnAction { [self openSettings:@"x-apple.systempreferences:com.apple.Keyboard-Settings.extension"]; }
+// A menu of languages with check marks: the ones Tynda listens for first, then the rest by name.
+- (void)languagesAction {
+    NSArray<NSString *> *chosen = ChosenLanguages();
+    NSMenu *menu = [NSMenu new];
+    NSMenuItem *head = [menu addItemWithTitle:L(@"Tynda listens for:", @"Tynda слушает:") action:nil keyEquivalent:@""];
+    head.enabled = NO;
+    for (NSString *code in chosen) [self addLanguage:code to:menu checked:YES];
+    [menu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *more = [menu addItemWithTitle:L(@"Add a language:", @"Добавить язык:") action:nil keyEquivalent:@""];
+    more.enabled = NO;
+    for (NSArray<NSString *> *l in AllLanguages()) if (![chosen containsObject:l[0]]) [self addLanguage:l[0] to:menu checked:NO];
+    [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, _lang.button.bounds.size.height + 4) inView:_lang.button];
+}
+
+- (void)addLanguage:(NSString *)code to:(NSMenu *)menu checked:(BOOL)checked {
+    NSMenuItem *item = [menu addItemWithTitle:LanguageName(code) action:@selector(toggleLanguage:) keyEquivalent:@""];
+    item.target = self;
+    item.representedObject = code;
+    item.state = checked ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)toggleLanguage:(NSMenuItem *)item {
+    NSMutableArray<NSString *> *chosen = [ChosenLanguages() mutableCopy];
+    NSString *code = item.representedObject;
+    if ([chosen containsObject:code]) {
+        if (chosen.count == 1) return;  // at least one language has to stay
+        [chosen removeObject:code];
+    } else {
+        [chosen addObject:code];
+    }
+    [NSUserDefaults.standardUserDefaults setObject:chosen forKey:@"languages"];
+    Log(@"setup: languages are now %@", [chosen componentsJoinedByString:@","]);
+    if (self.languagesChanged) self.languagesChanged();
+    [self refresh];
+}
+
+// Waits for one key press and makes that key the dictation key.
+- (void)keyAction {
+    if (_keyMonitor) { [self stopChoosingKey]; return; }
+    gChoosingHotkey = YES;
+    _keyNote = nil;
+    [_window makeFirstResponder:nil];
+    __weak Onboarding *weakSelf = self;
+    _keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskFlagsChanged handler:^NSEvent *(NSEvent *e) {
+        Onboarding *me = weakSelf;
+        if (!me) return e;
+        CGKeyCode key = (CGKeyCode)e.keyCode;
+        if (e.type == NSEventTypeFlagsChanged) {
+            // Only the press of a modifier counts, not its release.
+            CGEventFlags flag = HotkeyFlag(key);
+            if (!flag || !((CGEventFlags)e.modifierFlags & flag)) return nil;
+        } else if (key == kKeyEsc) {
+            [me stopChoosingKey];
+            return nil;
+        }
+        if (!HotkeyNameFor(key)) {
+            me->_keyNote = L(@"That key types or is too common. Pick fn, ⌥, ⌃, right ⌘ or an F-key. Esc — keep the current one.",
+                             @"Эта клавиша печатает или слишком ходовая. Выбери fn, ⌥, ⌃, правый ⌘ или F-клавишу. Esc — оставить как есть.");
+            [me refresh];
+            return nil;
+        }
+        [NSUserDefaults.standardUserDefaults setInteger:key forKey:@"hotkey"];
+        LoadHotkey();
+        Log(@"setup: dictation key is now %@ (%d)", HotkeyName(), (int)key);
+        [me stopChoosingKey];
+        if (me.hotkeyChanged) me.hotkeyChanged();
+        [me rebuild];  // the hints in the window name the key
+        return nil;
+    }];
+    [self refresh];
+}
+
+- (void)stopChoosingKey {
+    if (_keyMonitor) [NSEvent removeMonitor:_keyMonitor];
+    _keyMonitor = nil;
+    _keyNote = nil;
+    gChoosingHotkey = NO;
+    [self refresh];
+}
+
+- (void)rebuild {
+    NSRect old = _window.frame;
+    NSString *typed = _tryField.stringValue;
+    [_window orderOut:nil];
+    _window = nil;
+    [self build];
+    _tryField.stringValue = typed ?: @"";
+    [_window setFrameTopLeftPoint:NSMakePoint(old.origin.x, NSMaxY(old))];
+    [self refresh];
+    [_window makeKeyAndOrderFront:nil];
+}
 - (void)engineAction {}
 
 - (void)doneAction {
@@ -921,12 +1130,13 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
 }
 
 - (void)windowWillClose:(NSNotification *)note {
+    if (_keyMonitor) [self stopChoosingKey];
     [_timer invalidate];
     _timer = nil;
 }
 @end
 
-// fn held = push-to-talk; a quick double tap = hands-free until the next fn.
+// The dictation key held = push-to-talk; a quick double tap = hands-free until the next press.
 typedef NS_ENUM(NSInteger, DictState) { DIdle, DHolding, DTapWait, DLocked };
 
 static const NSTimeInterval kTapMax = 0.50;          // shorter than this is always a tap, not a hold
@@ -934,7 +1144,6 @@ static const NSTimeInterval kSlowTapMax = 1.0;       // up to this it is still a
 static const NSTimeInterval kSecondTapWait = 0.60;   // how long to wait for the second tap
 static const NSTimeInterval kSilenceStop = 45;       // hands-free: stop by itself after this much silence
 static const NSTimeInterval kMaxDictation = 15 * 60; // hands-free: hard cap
-static const CGKeyCode kKeyFn = 63, kKeyGlobe = 179, kKeyEsc = 53, kKeyV = 9;
 
 static BOOL DemoDictation(void) { return [NSProcessInfo.processInfo.arguments containsObject:@"--demo-dictation"]; }
 
@@ -981,9 +1190,9 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _infoItem.enabled = NO;
     [menu addItem:_infoItem];
     [menu addItem:NSMenuItem.separatorItem];
-    _dictationItem = [[NSMenuItem alloc] initWithTitle:L(@"Dictation with fn", @"Диктовка по fn") action:@selector(toggleDictation) keyEquivalent:@""];
+    LoadHotkey();
+    _dictationItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(toggleDictation) keyEquivalent:@""];
     _dictationItem.target = self;
-    _dictationItem.toolTip = L(@"Hold fn and speak — the text is typed where your cursor is. Double-tap fn for hands-free, fn again to stop, Esc to cancel.", @"Удерживай fn и говори — текст вставится на месте курсора. Двойной fn — запись без удержания, ещё один fn — стоп, Esc — отмена.");
     [menu addItem:_dictationItem];
     _copyLastItem = [[NSMenuItem alloc] initWithTitle:L(@"Copy last dictation", @"Скопировать последнюю диктовку") action:@selector(copyLast) keyEquivalent:@""];
     _copyLastItem.target = self;
@@ -1015,7 +1224,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _dictationItem.state = [self dictationEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
     if (!_tap || !_transcriber.ready) _infoItem.title = L(@"Not ready yet — open Setup…", @"Ещё не готово — открой «Настройка…»");
     else if (![self dictationEnabled]) _infoItem.title = L(@"Dictation is off", @"Диктовка выключена");
-    else _infoItem.title = L(@"Hold fn and speak", @"Удерживай fn и говори");
+    else _infoItem.title = [NSString stringWithFormat:L(@"Hold %@ and speak", @"Удерживай %@ и говори"), HotkeyName()];
+    _dictationItem.title = [NSString stringWithFormat:L(@"Dictation with %@", @"Диктовка по %@"), HotkeyName()];
+    _dictationItem.toolTip = [NSString stringWithFormat:L(@"Hold %1$@ and speak — the text is typed where your cursor is. Double-tap %1$@ for hands-free, %1$@ again to stop, Esc to cancel. Change the key in Setup…",
+                                                          @"Удерживай %1$@ и говори — текст вставится на месте курсора. Двойное нажатие %1$@ — запись без удержания, ещё раз %1$@ — стоп, Esc — отмена. Клавиша меняется в «Настройка…»"), HotkeyName()];
 }
 
 - (void)showOnboarding {
@@ -1025,6 +1237,16 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         _onboarding.engineInstalled = ^BOOL { return PythonPath() != nil; };
         _onboarding.engineReady = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_transcriber.ready : NO; };
         _onboarding.listening = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_tap != NULL : NO; };
+        _onboarding.languagesChanged = ^{
+            AppDelegate *me = weakSelf;
+            [me->_transcriber restart];  // the engine reads the list when it starts
+            [me refreshDictationMenu];
+        };
+        _onboarding.hotkeyChanged = ^{
+            AppDelegate *me = weakSelf;
+            [me cancelDictation:NO];
+            [me refreshDictationMenu];
+        };
     }
     [_onboarding show];
 }
@@ -1092,7 +1314,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 - (void)installTap {
     if (_tap || !AXIsProcessTrusted()) return;
-    CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown);
+    CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp);
     _tap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault, mask, TapCallback, (__bridge void *)self);
     if (!_tap) return;
     // Its own thread: if the main thread is busy for a moment, no key press is lost or delayed.
@@ -1116,26 +1338,33 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         if (_tap) CGEventTapEnable(_tap, true);
         return event;
     }
+    if (gChoosingHotkey) return event;  // the setup window is picking a key right now
     CGKeyCode key = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+    CGKeyCode hot = gHotkey;
+    CGEventFlags flag = HotkeyFlag(hot);
+    void (^report)(BOOL) = ^(BOOL down) {
+        if (down == self->_fnDown) return;
+        self->_fnDown = down;
+        NSTimeInterval t = CGEventGetTimestamp(event) / 1e9;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (down) [self fnPressed:t]; else [self fnReleased:t];
+        });
+    };
     if (type == kCGEventFlagsChanged) {
-        if (key == kKeyFn) {
-            BOOL down = (CGEventGetFlags(event) & kCGEventFlagMaskSecondaryFn) != 0;
-            if (down != _fnDown) {
-                _fnDown = down;
-                NSTimeInterval t = CGEventGetTimestamp(event) / 1e9;
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    if (down) [self fnPressed:t]; else [self fnReleased:t];
-                });
-            }
-        }
+        if (flag && key == hot) report((CGEventGetFlags(event) & flag) != 0);
         return event;
     }
+    if (!flag && key == hot) {
+        // An F-key chosen as the dictation key belongs to Tynda: other apps never see it.
+        if (!CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat)) report(type == kCGEventKeyDown);
+        return NULL;
+    }
     if (type == kCGEventKeyDown) {
-        // fn + another key is a normal shortcut (fn+arrows, fn+delete…), not dictation.
+        // The dictation key + another key is a normal shortcut (fn+arrows, ⌥+letter…), not dictation.
         DictState state = _dState;
         // A quick tap of fn (the globe key) also arrives as a key press of its own. It is not "another key".
-        if (key == kKeyFn || key == kKeyGlobe) return event;
-        if (state == DHolding || state == DTapWait) Log(@"dictation: key %d pressed with fn, not a dictation", (int)key);
+        if (hot == kKeyFn && (key == kKeyFn || key == kKeyGlobe)) return event;
+        if (state == DHolding || state == DTapWait) Log(@"dictation: key %d pressed with the dictation key, not a dictation", (int)key);
         if (state != DIdle && key == kKeyEsc) {  // "I changed my mind"
             dispatch_async(dispatch_get_main_queue(), ^{ [self cancelDictation:YES]; });
             return NULL;
@@ -1232,7 +1461,9 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     if (_dictation.level > 0.12) _lastVoiceAt = now;
     if (_dState == DHolding && !DemoDictation()) {
         // The release of fn can get lost (password fields hide keys from us). Ask the keyboard itself.
-        BOOL physicallyDown = (CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState) & kCGEventFlagMaskSecondaryFn) != 0;
+        CGEventFlags flag = HotkeyFlag(gHotkey);
+        BOOL physicallyDown = flag ? (CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState) & flag) != 0
+                                   : CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, gHotkey);
         if (!physicallyDown && [now timeIntervalSinceDate:_fnDownAt] > kSlowTapMax + 0.25) {
             Log(@"dictation: fn release was missed, finishing");
             _fnDown = NO;

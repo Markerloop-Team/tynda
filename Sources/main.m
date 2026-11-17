@@ -5,6 +5,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/QuartzCore.h>
 #import <ServiceManagement/ServiceManagement.h>
 
 // The Python script travels inside the app bundle.
@@ -510,12 +511,145 @@ static NSImage *BarsImage(NSColor *color) {
     return img;
 }
 
+#pragma mark - Small building blocks for the setup window
+
+static NSColor *Wh(CGFloat a) { return [NSColor colorWithWhite:1 alpha:a]; }
+static NSColor *TyndaRed(void) { return [NSColor colorWithSRGBRed:0.898 green:0.200 blue:0.165 alpha:1]; }
+
+static NSTextField *Lbl(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color) {
+    NSTextField *f = [NSTextField labelWithString:text ?: @""];
+    f.font = [NSFont systemFontOfSize:size weight:weight];
+    f.textColor = color;
+    f.lineBreakMode = NSLineBreakByTruncatingTail;
+    return f;
+}
+
+static NSTextField *WrapLbl(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color, NSInteger maxLines) {
+    NSTextField *f = [NSTextField wrappingLabelWithString:text ?: @""];
+    f.font = [NSFont systemFontOfSize:size weight:weight];
+    f.textColor = color;
+    f.selectable = NO;
+    f.maximumNumberOfLines = maxLines;
+    f.cell.truncatesLastVisibleLine = YES;
+    return f;
+}
+
+// A view with its origin at the top left, like a page.
+@interface Flip : NSView
+@end
+@implementation Flip
+- (BOOL)isFlipped { return YES; }
+@end
+
+// A rounded, tinted surface. With onClick it behaves like a button and lights up under the pointer.
+@interface Card : Flip
+@property(nonatomic) CGFloat radius;
+@property(nonatomic, strong) NSColor *fill, *hoverFill, *stroke;
+@property(nonatomic, copy) void (^onClick)(void);
+@end
+@implementation Card {
+    BOOL _hover;
+    NSTrackingArea *_area;
+}
+- (instancetype)initWithFrame:(NSRect)frame {
+    if ((self = [super initWithFrame:frame])) self.wantsLayer = YES;
+    return self;
+}
+- (BOOL)wantsUpdateLayer { return YES; }
+- (void)updateLayer {
+    NSColor *c = (_hover && self.onClick) ? (self.hoverFill ?: self.fill) : self.fill;
+    self.layer.backgroundColor = c.CGColor;
+    self.layer.cornerRadius = self.radius;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+    self.layer.borderWidth = self.stroke ? 1 : 0;
+    self.layer.borderColor = self.stroke.CGColor;
+}
+- (void)setFill:(NSColor *)fill { _fill = fill; self.needsDisplay = YES; }
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_area) [self removeTrackingArea:_area];
+    _area = [[NSTrackingArea alloc] initWithRect:self.bounds options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways owner:self userInfo:nil];
+    [self addTrackingArea:_area];
+}
+- (void)mouseEntered:(NSEvent *)e { _hover = YES; self.needsDisplay = YES; }
+- (void)mouseExited:(NSEvent *)e { _hover = NO; self.needsDisplay = YES; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)e { return YES; }
+- (void)mouseDown:(NSEvent *)e { if (!self.onClick) [super mouseDown:e]; }
+- (void)mouseUp:(NSEvent *)e {
+    if (self.onClick && NSPointInRect([self convertPoint:e.locationInWindow fromView:nil], self.bounds)) self.onClick();
+    else [super mouseUp:e];
+}
+@end
+
+static Card *MakeCard(NSRect frame, CGFloat radius, NSColor *fill, NSColor *stroke) {
+    Card *c = [[Card alloc] initWithFrame:frame];
+    c.radius = radius;
+    c.fill = fill;
+    c.stroke = stroke;
+    return c;
+}
+
+// A capsule button: red for the one main action, translucent for the rest.
+static Card *Pill(NSRect frame, NSString *title, BOOL red, BOOL dot, void (^handler)(void)) {
+    Card *c = MakeCard(frame, frame.size.height / 2,
+                       red ? TyndaRed() : Wh(0.14), red ? Wh(0.30) : Wh(0.22));
+    c.hoverFill = red ? [NSColor colorWithSRGBRed:1 green:0.33 blue:0.29 alpha:1] : Wh(0.22);
+    c.onClick = handler;
+    NSTextField *t = Lbl(dot ? [@"●  " stringByAppendingString:title] : title, 13, NSFontWeightSemibold, NSColor.whiteColor);
+    t.alignment = NSTextAlignmentCenter;
+    t.frame = NSMakeRect(8, (frame.size.height - 18) / 2, frame.size.width - 16, 18);
+    [c addSubview:t];
+    return c;
+}
+
+// The state of one setup step: done, waiting for the user, or working on it.
+typedef NS_ENUM(NSInteger, StepState) { StepTodo, StepDone, StepBusy };
+
+@interface StatusDot : NSView
+@property(nonatomic) StepState state;
+@end
+@implementation StatusDot
+- (void)setState:(StepState)state { if (state != _state) { _state = state; self.needsDisplay = YES; } }
+- (void)drawRect:(NSRect)dirty {
+    NSRect r = NSInsetRect(self.bounds, 2, 2);
+    if (self.state == StepDone) {
+        [NSColor.systemGreenColor setFill];
+        [[NSBezierPath bezierPathWithOvalInRect:r] fill];
+        NSBezierPath *check = [NSBezierPath bezierPath];
+        CGFloat w = r.size.width, x = r.origin.x, y = r.origin.y;
+        [check moveToPoint:NSMakePoint(x + w * 0.28, y + w * 0.52)];
+        [check lineToPoint:NSMakePoint(x + w * 0.44, y + w * 0.34)];
+        [check lineToPoint:NSMakePoint(x + w * 0.73, y + w * 0.68)];
+        check.lineWidth = 2.2;
+        check.lineCapStyle = NSLineCapStyleRound;
+        check.lineJoinStyle = NSLineJoinStyleRound;
+        [NSColor.whiteColor setStroke];
+        [check stroke];
+        return;
+    }
+    NSBezierPath *ring = [NSBezierPath bezierPathWithOvalInRect:NSInsetRect(r, 1, 1)];
+    ring.lineWidth = 2;
+    [(self.state == StepBusy ? Wh(0.35) : NSColor.systemOrangeColor) setStroke];
+    [ring stroke];
+}
+@end
+
+// A keyboard key, as a hint.
+static NSView *KeyCap(NSString *text) {
+    NSTextField *t = Lbl(text, 11, NSFontWeightSemibold, Wh(0.9));
+    [t sizeToFit];
+    Card *c = MakeCard(NSMakeRect(0, 0, t.frame.size.width + 14, 22), 6, Wh(0.16), Wh(0.24));
+    t.frame = NSMakeRect(7, 3, t.frame.size.width, 15);
+    [c addSubview:t];
+    return c;
+}
+
 #pragma mark - First run: one window that walks through the permissions
 
 @interface SetupRow : NSObject
-@property(nonatomic, strong) NSTextField *mark, *title, *detail;
-@property(nonatomic, strong) NSButton *button;
-@property(nonatomic, strong) NSView *view;
+@property(nonatomic, strong) StatusDot *dot;
+@property(nonatomic, strong) NSTextField *detail, *buttonLabel;
+@property(nonatomic, strong) Card *button;
 @end
 @implementation SetupRow
 @end
@@ -529,11 +663,13 @@ static NSImage *BarsImage(NSColor *color) {
 + (BOOL)needed;
 @end
 
+static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 66, kButtonW = 128;
+
 @implementation Onboarding {
     NSWindow *_window;
     SetupRow *_mic, *_access, *_fn, *_engine;
     NSTextField *_tryLabel, *_tryField;
-    NSButton *_done, *_login;
+    NSSwitch *_login;
     NSTimer *_timer;
 }
 
@@ -549,43 +685,35 @@ static NSImage *BarsImage(NSColor *color) {
     return ![NSUserDefaults.standardUserDefaults boolForKey:@"onboarded"] || ![self micGranted] || !AXIsProcessTrusted();
 }
 
-- (NSTextField *)label:(NSString *)text size:(CGFloat)size weight:(NSFontWeight)weight color:(NSColor *)color {
-    NSTextField *f = [NSTextField wrappingLabelWithString:text];
-    f.font = [NSFont systemFontOfSize:size weight:weight];
-    f.textColor = color;
-    f.selectable = NO;
-    return f;
-}
-
-- (SetupRow *)row:(NSString *)title action:(SEL)action {
+// One step: a status dot, a title, a line of explanation and, while it is not done, a button.
+- (SetupRow *)row:(NSString *)title action:(SEL)action at:(CGFloat)y in:(NSView *)root {
+    CGFloat w = kSetupW - 2 * kSetupPad;
     SetupRow *row = [SetupRow new];
-    row.mark = [self label:@"○" size:15 weight:NSFontWeightSemibold color:NSColor.tertiaryLabelColor];
-    row.title = [self label:title size:13 weight:NSFontWeightSemibold color:NSColor.labelColor];
-    row.detail = [self label:@"" size:12 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
-    row.button = [NSButton buttonWithTitle:@"" target:self action:action];
-    row.button.bezelStyle = NSBezelStyleRounded;
-    [row.mark.widthAnchor constraintEqualToConstant:20].active = YES;
-    [row.button.widthAnchor constraintEqualToConstant:128].active = YES;
-    NSStackView *text = [NSStackView stackViewWithViews:@[row.title, row.detail]];
-    text.orientation = NSUserInterfaceLayoutOrientationVertical;
-    text.alignment = NSLayoutAttributeLeading;
-    text.spacing = 2;
-    NSStackView *h = [NSStackView stackViewWithViews:@[row.mark, text, row.button]];
-    h.alignment = NSLayoutAttributeTop;
-    h.spacing = 10;
-    h.distribution = NSStackViewDistributionFill;
-    // The text takes all the room that is left, so the buttons line up on the right edge.
-    [text.widthAnchor constraintEqualToConstant:520 - 64 - 20 - 128 - 20].active = YES;
-    h.detachesHiddenViews = NO;
-    [text setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
-    [row.button setContentHuggingPriority:999 forOrientation:NSLayoutConstraintOrientationHorizontal];
-    [row.button setContentCompressionResistancePriority:999 forOrientation:NSLayoutConstraintOrientationHorizontal];
-    row.view = h;
+    Card *card = MakeCard(NSMakeRect(kSetupPad, y, w, kRowH), 18, Wh(0.08), Wh(0.14));
+    row.dot = [[StatusDot alloc] initWithFrame:NSMakeRect(14, (kRowH - 28) / 2, 28, 28)];
+    [card addSubview:row.dot];
+    NSTextField *t = Lbl(title, 14, NSFontWeightSemibold, NSColor.whiteColor);
+    t.frame = NSMakeRect(54, 11, w - 54 - kButtonW - 28, 18);
+    [card addSubview:t];
+    row.detail = WrapLbl(@"", 12.5, NSFontWeightRegular, Wh(0.62), 2);
+    row.detail.frame = NSMakeRect(54, 30, w - 54 - 16, 32);
+    [card addSubview:row.detail];
+    __weak Onboarding *weakSelf = self;
+    row.button = Pill(NSMakeRect(w - 14 - kButtonW, (kRowH - 34) / 2, kButtonW, 34), @"", NO, NO, ^{
+        Onboarding *me = weakSelf;
+        if (!me) return;
+        IMP imp = [me methodForSelector:action];
+        ((void (*)(id, SEL))imp)(me, action);
+    });
+    row.buttonLabel = row.button.subviews.firstObject;
+    [card addSubview:row.button];
+    [root addSubview:card];
     return row;
 }
 
 - (void)build {
-    _window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 600)
+    CGFloat w = kSetupW - 2 * kSetupPad, y = 0;
+    _window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, kSetupW, 100)
                                           styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskFullSizeContentView
                                             backing:NSBackingStoreBuffered
                                               defer:NO];
@@ -596,90 +724,108 @@ static NSImage *BarsImage(NSColor *color) {
     _window.movableByWindowBackground = YES;
     // Show up where the user is, even when they are in a full-screen app.
     _window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
-
-    NSImageView *icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
-    [icon.widthAnchor constraintEqualToConstant:72].active = YES;
-    [icon.heightAnchor constraintEqualToConstant:72].active = YES;
-    NSTextField *title = [self label:L(@"Welcome to Tynda", @"Добро пожаловать в Tynda") size:24 weight:NSFontWeightBold color:NSColor.labelColor];
-    NSTextField *sub = [self label:L(@"Hold fn, speak, and the text is typed where your cursor is. Four things to set up — it takes a minute.",
-                                     @"Удерживай fn, говори — и текст появится там, где стоит курсор. Нужно настроить четыре вещи, это минута.")
-                              size:13 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
-
-    _mic = [self row:L(@"Microphone", @"Микрофон") action:@selector(micAction)];
-    _access = [self row:L(@"Accessibility", @"Универсальный доступ") action:@selector(accessAction)];
-    _fn = [self row:L(@"The fn key", @"Клавиша fn") action:@selector(fnAction)];
-    _engine = [self row:L(@"Speech model", @"Модель распознавания речи") action:@selector(engineAction)];
-
-    NSBox *line = [NSBox new];
-    line.boxType = NSBoxSeparator;
-    _tryLabel = [self label:@"" size:13 weight:NSFontWeightSemibold color:NSColor.labelColor];
-    _tryField = [NSTextField textFieldWithString:@""];
-    _tryField.placeholderString = L(@"Click here, hold fn and say something", @"Нажми сюда, удерживай fn и скажи что-нибудь");
-    _tryField.font = [NSFont systemFontOfSize:14];
-    _tryField.usesSingleLineMode = NO;
-    _tryField.cell.wraps = YES;
-    _tryField.cell.scrollable = NO;
-    [_tryField.heightAnchor constraintEqualToConstant:64].active = YES;
-    NSTextField *hint = [self label:L(@"Hold fn — talk — let go.\nDouble-tap fn — hands-free; fn again to finish.\nEsc — cancel.",
-                                      @"Удерживай fn — говори — отпусти.\nДвойной fn — без удержания; ещё раз fn — готово.\nEsc — отмена.")
-                               size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
-    // A keyboard replacement has to be there after every restart.
-    _login = [NSButton checkboxWithTitle:L(@"Start Tynda when I log in", @"Запускать Tynda при входе в систему") target:self action:@selector(loginAction)];
-    _done = [NSButton buttonWithTitle:L(@"Done", @"Готово") target:self action:@selector(doneAction)];
-    _done.bezelStyle = NSBezelStyleRounded;
-    _done.keyEquivalent = @"\r";
-
-    [_done.widthAnchor constraintEqualToConstant:128].active = YES;
-    NSView *spacer = [NSView new];
-    NSStackView *footer = [NSStackView stackViewWithViews:@[spacer, _done]];
-    NSStackView *stack = [NSStackView stackViewWithViews:@[icon, title, sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryLabel, _tryField, hint, _login, footer]];
-    stack.orientation = NSUserInterfaceLayoutOrientationVertical;
-    stack.alignment = NSLayoutAttributeLeading;
-    stack.spacing = 14;
-    stack.edgeInsets = NSEdgeInsetsMake(36, 32, 24, 32);
-    [stack setCustomSpacing:6 afterView:title];
-    [stack setCustomSpacing:22 afterView:sub];
-    [stack setCustomSpacing:8 afterView:_tryLabel];
-    [stack setCustomSpacing:8 afterView:_tryField];
-    [stack setCustomSpacing:18 afterView:hint];
-    stack.translatesAutoresizingMaskIntoConstraints = NO;
-    NSView *content = [NSView new];
-    [content addSubview:stack];
-    NSVisualEffectView *base = [NSVisualEffectView new];
-    base.material = NSVisualEffectMaterialHUDWindow;
-    base.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-    base.state = NSVisualEffectStateActive;
-    content.translatesAutoresizingMaskIntoConstraints = NO;
-    [base addSubview:content];
-    [NSLayoutConstraint activateConstraints:@[
-        [content.topAnchor constraintEqualToAnchor:base.topAnchor],
-        [content.bottomAnchor constraintEqualToAnchor:base.bottomAnchor],
-        [content.leadingAnchor constraintEqualToAnchor:base.leadingAnchor],
-        [content.trailingAnchor constraintEqualToAnchor:base.trailingAnchor],
-    ]];
-    _window.contentView = base;
     _window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     _window.opaque = NO;
     _window.backgroundColor = NSColor.clearColor;
-    CGFloat inner = 520 - 64;
-    [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [stack.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
-        [stack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-        [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [content.widthAnchor constraintEqualToConstant:520],
-    ]];
-    for (NSView *v in @[sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryField, hint, footer]) {
-        [v.widthAnchor constraintEqualToConstant:inner].active = YES;
+
+    Flip *root = [[Flip alloc] initWithFrame:NSMakeRect(0, 0, kSetupW, 100)];
+
+    NSImageView *icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
+    icon.frame = NSMakeRect(kSetupPad - 9, 38, 86, 86);
+    [root addSubview:icon];
+    NSTextField *title = Lbl(L(@"Welcome to Tynda", @"Добро пожаловать в Tynda"), 28, NSFontWeightBold, NSColor.whiteColor);
+    title.frame = NSMakeRect(kSetupPad, 128, w, 36);
+    [root addSubview:title];
+    NSTextField *sub = Lbl(L(@"Talk instead of typing. Four things to set up — it takes a minute.",
+                             @"Говори вместо того, чтобы печатать. Настроить нужно четыре вещи — это минута."),
+                           14, NSFontWeightRegular, Wh(0.62));
+    sub.frame = NSMakeRect(kSetupPad, 168, w, 20);
+    [root addSubview:sub];
+
+    y = 204;
+    _mic = [self row:L(@"Microphone", @"Микрофон") action:@selector(micAction) at:y in:root];
+    y += kRowH + 10;
+    _access = [self row:L(@"Accessibility", @"Универсальный доступ") action:@selector(accessAction) at:y in:root];
+    y += kRowH + 10;
+    _fn = [self row:L(@"The fn key", @"Клавиша fn") action:@selector(fnAction) at:y in:root];
+    y += kRowH + 10;
+    _engine = [self row:L(@"Speech model", @"Модель распознавания речи") action:@selector(engineAction) at:y in:root];
+    y += kRowH + 18;
+
+    // Try it: a real text field to dictate the first phrase into.
+    Card *try = MakeCard(NSMakeRect(kSetupPad, y, w, 150), 20, Wh(0.08), Wh(0.14));
+    _tryLabel = Lbl(@"", 14, NSFontWeightSemibold, NSColor.whiteColor);
+    _tryLabel.frame = NSMakeRect(18, 14, w - 36, 18);
+    [try addSubview:_tryLabel];
+    Card *well = MakeCard(NSMakeRect(18, 42, w - 36, 60), 14, [NSColor colorWithWhite:0 alpha:0.28], Wh(0.14));
+    _tryField = [[NSTextField alloc] initWithFrame:NSMakeRect(12, 9, w - 36 - 24, 42)];
+    _tryField.bordered = NO;
+    _tryField.drawsBackground = NO;
+    _tryField.focusRingType = NSFocusRingTypeNone;
+    _tryField.font = [NSFont systemFontOfSize:14];
+    _tryField.textColor = NSColor.whiteColor;
+    _tryField.usesSingleLineMode = NO;
+    _tryField.cell.wraps = YES;
+    _tryField.cell.scrollable = NO;
+    _tryField.placeholderAttributedString = [[NSAttributedString alloc]
+        initWithString:L(@"Click here, hold fn and say something", @"Нажми сюда, удерживай fn и скажи что-нибудь")
+            attributes:@{NSForegroundColorAttributeName: Wh(0.42), NSFontAttributeName: [NSFont systemFontOfSize:14]}];
+    [well addSubview:_tryField];
+    [try addSubview:well];
+    CGFloat x = 18;
+    NSArray *hints = @[@[@[@"fn"], L(@"hold to talk", @"удерживать")], @[@[@"fn", @"fn"], L(@"hands-free", @"без удержания")], @[@[@"esc"], L(@"cancel", @"отмена")]];
+    for (NSArray *hint in hints) {
+        for (NSString *key in hint[0]) {
+            NSView *cap = KeyCap(key);
+            [cap setFrameOrigin:NSMakePoint(x, 114)];
+            [try addSubview:cap];
+            x += cap.frame.size.width + 5;
+        }
+        NSTextField *t = Lbl(hint[1], 12, NSFontWeightRegular, Wh(0.6));
+        [t sizeToFit];
+        t.frame = NSMakeRect(x + 2, 117, t.frame.size.width, 16);
+        [try addSubview:t];
+        x += t.frame.size.width + 18;
     }
+    [root addSubview:try];
+    y += 150 + 20;
+
+    // A keyboard replacement has to be there after every restart.
+    _login = [[NSSwitch alloc] initWithFrame:NSMakeRect(kSetupPad, y + 7, 42, 24)];
+    _login.target = self;
+    _login.action = @selector(loginAction);
+    [root addSubview:_login];
+    NSTextField *loginLabel = Lbl(L(@"Start Tynda when I log in", @"Запускать Tynda при входе в систему"), 14, NSFontWeightRegular, NSColor.whiteColor);
+    loginLabel.frame = NSMakeRect(kSetupPad + 52, y + 9, 300, 20);
+    [root addSubview:loginLabel];
+    __weak Onboarding *weakSelf = self;
+    [root addSubview:Pill(NSMakeRect(kSetupW - kSetupPad - 110, y, 110, 38), L(@"Done", @"Готово"), YES, NO, ^{ [weakSelf doneAction]; })];
+    y += 38 + 28;
+
+    // Dark, blurred glass under everything, with a veil so white text reads on any wallpaper.
+    NSRect frame = NSMakeRect(0, 0, kSetupW, y);
+    NSVisualEffectView *base = [[NSVisualEffectView alloc] initWithFrame:frame];
+    base.material = NSVisualEffectMaterialHUDWindow;
+    base.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    base.state = NSVisualEffectStateActive;
+    NSView *veil = [[NSView alloc] initWithFrame:frame];
+    veil.wantsLayer = YES;
+    veil.layer.backgroundColor = [NSColor colorWithWhite:0.04 alpha:0.42].CGColor;
+    [base addSubview:veil];
+    root.frame = frame;
+    [base addSubview:root];
+    [_window setContentSize:frame.size];
+    _window.contentView = base;
 }
 
 - (void)set:(SetupRow *)row ok:(BOOL)ok busy:(BOOL)busy detail:(NSString *)detail button:(NSString *)button {
-    row.mark.stringValue = ok ? @"✓" : (busy ? @"…" : @"○");
-    row.mark.textColor = ok ? NSColor.systemGreenColor : (busy ? NSColor.secondaryLabelColor : NSColor.systemOrangeColor);
+    row.dot.state = ok ? StepDone : (busy ? StepBusy : StepTodo);
     row.detail.stringValue = detail;
-    row.button.hidden = ok || button == nil;
-    if (button) row.button.title = button;
+    BOOL showButton = !ok && button != nil;
+    row.button.hidden = !showButton;
+    if (button) row.buttonLabel.stringValue = button;
+    CGFloat w = kSetupW - 2 * kSetupPad;
+    row.detail.frame = NSMakeRect(54, 30, w - 54 - 16 - (showButton ? kButtonW + 10 : 0), 32);
 }
 
 - (void)refresh {
@@ -693,31 +839,31 @@ static NSImage *BarsImage(NSColor *color) {
     BOOL axOK = AXIsProcessTrusted();
     [self set:_access ok:axOK busy:NO
        detail:axOK ? L(@"Tynda notices fn and can type for you.", @"Tynda видит fn и может печатать за тебя.")
-                   : L(@"To notice the fn key and to type the text into the app you are in. Turn on Tynda in the list that opens.",
-                       @"Чтобы замечать fn и вставлять текст в программу, где ты работаешь. В открывшемся списке включи Tynda.")
+                   : L(@"To notice fn and to type for you. Turn on Tynda in the list that opens.",
+                       @"Чтобы замечать fn и печатать за тебя. В открывшемся списке включи Tynda.")
        button:L(@"Open Settings", @"Открыть настройки")];
 
     BOOL fnOK = [Onboarding fnFree];
     [self set:_fn ok:fnOK busy:NO
-       detail:fnOK ? L(@"The key is free for dictation.", @"Клавиша свободна для диктовки.")
-                   : L(@"macOS uses fn for something else. In Keyboard settings set \"Press 🌐 key to\" to \"Do Nothing\".",
-                       @"macOS занимает fn другим действием. В настройках клавиатуры поставь «Нажатие клавиши 🌐» → «Ничего не делать».")
+       detail:fnOK ? L(@"Free for dictation.", @"Свободна для диктовки.")
+                   : L(@"macOS uses fn for something else. Set “Press 🌐 key to” to “Do Nothing”.",
+                       @"macOS занимает fn другим действием. Поставь «Нажатие клавиши 🌐» → «Ничего не делать».")
        button:L(@"Open Settings", @"Открыть настройки")];
 
     BOOL installed = self.engineInstalled && self.engineInstalled();
     BOOL ready = self.engineReady && self.engineReady();
     [self set:_engine ok:ready busy:installed && !ready
-       detail:ready ? L(@"Loaded. Recognition runs on this Mac.", @"Загружена. Распознавание идёт на этом Mac.")
+       detail:ready ? L(@"Loaded. Runs on this Mac.", @"Загружена. Работает на этом Mac.")
                     : (installed ? L(@"Loading, a few seconds…", @"Загружается, несколько секунд…")
-                                 : L(@"Not installed. Run install.sh from the project folder.", @"Не установлена. Запусти install.sh из папки проекта."))
+                                 : L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh."))
        button:nil];
 
     _login.state = SMAppService.mainAppService.status == SMAppServiceStatusEnabled ? NSControlStateValueOn : NSControlStateValueOff;
 
     BOOL all = micOK && axOK && ready && self.listening && self.listening();
-    _tryLabel.stringValue = all ? L(@"Everything is ready — try it", @"Всё готово — попробуй")
+    _tryLabel.stringValue = all ? L(@"Try it", @"Попробуй")
                                 : L(@"Try it once the steps above are green", @"Попробуй, когда шаги выше станут зелёными");
-    _tryLabel.textColor = all ? NSColor.labelColor : NSColor.tertiaryLabelColor;
+    _tryLabel.textColor = all ? NSColor.whiteColor : Wh(0.4);
     _tryField.enabled = all;
 }
 

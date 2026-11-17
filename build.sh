@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 APP=Tynda.app
+VERSION="$(cat VERSION)"   # the one place the version lives
 rm -rf Tynda.app   # start clean, so nothing from an older build rides along
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
@@ -19,7 +20,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleExecutable</key><string>Tynda</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>

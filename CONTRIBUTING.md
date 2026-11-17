@@ -55,4 +55,13 @@ printf '{"path": "/path/to/some.wav"}\n' | ~/Library/Application\ Support/Tynda/
 - Match the code around you: plain C-style Objective-C, comments that say why.
 - Interface text goes through `L(@"English", @"Русский")`; if you do not speak Russian, leave the second string the same as the first and say so.
 
+## Releases
+
+Maintainers cut releases; contributors only add a line under *Unreleased* in `CHANGELOG.md`.
+
+1. A release pull request moves the *Unreleased* notes into a new `## [x.y.z] — date` section and sets `VERSION`.
+2. After it is merged, `tools/release.sh` on an up-to-date `main` checks that `VERSION`, the changelog and the build agree, tags `vx.y.z` and publishes the GitHub release with those notes. `tools/release.sh --dry-run` shows what it would do.
+
+Versions follow Semantic Versioning. While Tynda is 0.x, releases are marked as pre-releases.
+
 By contributing you agree that your work is released under the [MIT license](LICENSE).

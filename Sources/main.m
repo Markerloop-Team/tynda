@@ -5,6 +5,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <Cocoa/Cocoa.h>
+#import <ServiceManagement/ServiceManagement.h>
 
 // The Python script travels inside the app bundle.
 static NSURL *ScriptsDir(void) { return NSBundle.mainBundle.resourceURL; }
@@ -532,7 +533,7 @@ static NSImage *BarsImage(NSColor *color) {
     NSWindow *_window;
     SetupRow *_mic, *_access, *_fn, *_engine;
     NSTextField *_tryLabel, *_tryField;
-    NSButton *_done;
+    NSButton *_done, *_login;
     NSTimer *_timer;
 }
 
@@ -622,6 +623,8 @@ static NSImage *BarsImage(NSColor *color) {
     NSTextField *hint = [self label:L(@"Hold fn — talk — let go.\nDouble-tap fn — hands-free; fn again to finish.\nEsc — cancel.",
                                       @"Удерживай fn — говори — отпусти.\nДвойной fn — без удержания; ещё раз fn — готово.\nEsc — отмена.")
                                size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
+    // A keyboard replacement has to be there after every restart.
+    _login = [NSButton checkboxWithTitle:L(@"Start Tynda when I log in", @"Запускать Tynda при входе в систему") target:self action:@selector(loginAction)];
     _done = [NSButton buttonWithTitle:L(@"Done", @"Готово") target:self action:@selector(doneAction)];
     _done.bezelStyle = NSBezelStyleRounded;
     _done.keyEquivalent = @"\r";
@@ -629,7 +632,7 @@ static NSImage *BarsImage(NSColor *color) {
     [_done.widthAnchor constraintEqualToConstant:128].active = YES;
     NSView *spacer = [NSView new];
     NSStackView *footer = [NSStackView stackViewWithViews:@[spacer, _done]];
-    NSStackView *stack = [NSStackView stackViewWithViews:@[icon, title, sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryLabel, _tryField, hint, footer]];
+    NSStackView *stack = [NSStackView stackViewWithViews:@[icon, title, sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryLabel, _tryField, hint, _login, footer]];
     stack.orientation = NSUserInterfaceLayoutOrientationVertical;
     stack.alignment = NSLayoutAttributeLeading;
     stack.spacing = 14;
@@ -709,6 +712,8 @@ static NSImage *BarsImage(NSColor *color) {
                                  : L(@"Not installed. Run install.sh from the project folder.", @"Не установлена. Запусти install.sh из папки проекта."))
        button:nil];
 
+    _login.state = SMAppService.mainAppService.status == SMAppServiceStatusEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+
     BOOL all = micOK && axOK && ready && self.listening && self.listening();
     _tryLabel.stringValue = all ? L(@"Everything is ready — try it", @"Всё готово — попробуй")
                                 : L(@"Try it once the steps above are green", @"Попробуй, когда шаги выше станут зелёными");
@@ -733,6 +738,14 @@ static NSImage *BarsImage(NSColor *color) {
     // Puts Tynda into the Accessibility list, then opens that list.
     AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge id)kAXTrustedCheckOptionPrompt: @YES});
     [self openSettings:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"];
+}
+
+- (void)loginAction {
+    NSError *err = nil;
+    BOOL ok = _login.state == NSControlStateValueOn ? [SMAppService.mainAppService registerAndReturnError:&err]
+                                                    : [SMAppService.mainAppService unregisterAndReturnError:&err];
+    Log(@"setup: start at login → %@%@", _login.state == NSControlStateValueOn ? @"on" : @"off", ok ? @"" : [NSString stringWithFormat:@" failed: %@", err.localizedDescription]);
+    [self refresh];
 }
 
 - (void)fnAction { [self openSettings:@"x-apple.systempreferences:com.apple.Keyboard-Settings.extension"]; }

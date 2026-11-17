@@ -6,7 +6,7 @@ APP=Tynda.app
 rm -rf Tynda.app   # start clean, so nothing from an older build rides along
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
-  -framework Cocoa -framework ApplicationServices -framework AVFoundation \
+  -framework Cocoa -framework ApplicationServices -framework AVFoundation -framework ServiceManagement \
   Sources/main.m -o "$APP/Contents/MacOS/Tynda"
 cp dictate_server.py Resources/AppIcon.icns "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<EOF

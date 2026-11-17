@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Scripts can be run
+        run: |
+          for f in install.sh uninstall.sh build.sh tools/release.sh tools/make_icon.sh; do
+            test -x "$f" || { echo "$f is not executable"; exit 1; }
+          done
+
       - name: Scripts parse
         run: |
           zsh -n install.sh

@@ -6,6 +6,13 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-11-18
+
+### Fixed
+
+- `./uninstall.sh` failed with "permission denied": the script was published without its executable flag.
+  The build check now refuses a script that cannot be run.
+
 ## [0.1.0] — 2026-11-18
 
 The first public release. Early alpha: it works on its author's Mac and has not met many others yet.
@@ -36,5 +43,6 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.0

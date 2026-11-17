@@ -30,7 +30,20 @@ RATE = 16000
 # The languages to listen for, chosen in the setup window. Left to itself the model sometimes takes a
 # cough or a short word for a sentence in a language nobody in the room speaks; a short list stops that.
 # An empty list means "any language".
-LANGS = [c for c in os.environ.get("TYNDA_LANGS", "en,ru,kk").split(",") if c]
+LANGS = [c for c in os.environ.get("TYNDA_LANGS", "").split(",") if c]
+
+# The user's own words — names, brands, terms — one per line. The model is shown them before every
+# phrase, the way it is shown the text that came before, which is how it learns their spelling.
+# The model looks at about 220 tokens of such text and prefers the end of it, so the list is kept
+# short and is placed before the style lead-in.
+WORDS = [w.strip() for w in os.environ.get("TYNDA_WORDS", "").split("\n") if w.strip()]
+GLOSSARY = ""
+for word in WORDS:
+    if len(GLOSSARY) + len(word) > 500:
+        break
+    GLOSSARY += (", " if GLOSSARY else "") + word
+if GLOSSARY:
+    GLOSSARY += "."
 
 # Spontaneous speech often comes back lowercase and unpunctuated. A short, properly punctuated
 # lead-in sets the style. Where there is none, the model's own habits apply.
@@ -88,8 +101,9 @@ def spoken_language(audio):
 
 
 def run(audio, language):
+    lead_in = " ".join(part for part in (GLOSSARY, STYLE.get(language)) if part) or None
     return mlx_whisper.transcribe(audio, path_or_hf_repo=MODEL, language=language,
-                                  initial_prompt=STYLE.get(language),
+                                  initial_prompt=lead_in,
                                   condition_on_previous_text=True, verbose=None)
 
 
@@ -106,7 +120,7 @@ def transcribe(path):
     text = re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
     if JUNK.search(text) and len(text) < 80:
         return ""
-    if any(text and text in lead_in for lead_in in STYLE.values()):  # the lead-in leaking out on near-silence
+    if any(text and text in lead_in for lead_in in [*STYLE.values(), GLOSSARY]):  # the lead-in leaking out on near-silence
         return ""
     words = re.findall(r"\w+", text.lower())
     return "" if all(w in {"you", "thank", "thanks", "bye"} for w in words) else text

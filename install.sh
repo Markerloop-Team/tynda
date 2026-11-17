@@ -60,6 +60,7 @@ mkdir -p "$DEST"
 pkill -x Tynda 2>/dev/null || true
 rm -rf "$DEST/Tynda.app"
 cp -R Tynda.app "$DEST/Tynda.app"
+rm -rf ./Tynda.app   # leave one copy on the Mac, or Spotlight and Launchpad show Tynda twice
 # A rebuild is a new app for macOS: forget the stale permission so it asks again cleanly.
 tccutil reset Accessibility app.tynda.mac >/dev/null 2>&1 || true
 open "$DEST/Tynda.app"

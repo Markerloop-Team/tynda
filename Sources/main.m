@@ -154,8 +154,12 @@ static NSArray<NSString *> *ChosenLanguages(void) {
     NSMutableArray *ok = [NSMutableArray new];
     for (id code in saved) if ([code isKindOfClass:NSString.class] && ![LanguageName(code) isEqualToString:code]) [ok addObject:code];
     if (ok.count) return ok;
-    NSArray<NSString *> *keyboard = KeyboardLanguages();  // until the user edits the list
-    return keyboard.count ? keyboard : @[@"en"];
+    // Until the user edits the list: the languages of the keyboard layouts, and Kazakh —
+    // Tynda comes from Kazakhstan, where people speak it far more often than they type it.
+    NSMutableArray<NSString *> *start = [KeyboardLanguages() mutableCopy];
+    if (start.count == 0) [start addObject:@"en"];
+    if (![start containsObject:@"kk"]) [start addObject:@"kk"];
+    return start;
 }
 
 #pragma mark - Dictation: microphone into memory, with a live level for the waveform

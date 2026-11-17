@@ -6,6 +6,13 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-18
+
+### Changed
+
+- Kazakh is in the default list of languages, next to the languages of your keyboard layouts. If you do not
+  need it, untick it in the setup window; a list you have already edited stays as it is.
+
 ## [0.2.0] — 2026-11-18
 
 ### Added
@@ -65,7 +72,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.0

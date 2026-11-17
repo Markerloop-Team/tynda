@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tynda — hold fn, speak, it types</title>
-<meta name="description" content="Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.">
+<meta name="description" content="A small, free, open-source Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac.">
 <meta property="og:title" content="Tynda — hold fn, speak, it types">
-<meta property="og:description" content="Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.">
+<meta property="og:description" content="A small, free, open-source Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac.">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <meta property="og:image" content="icon.png">
@@ -167,7 +167,6 @@
     <a class="mark" href="#"><img src="icon.png" alt="" width="34" height="34">Tynda<span>.</span></a>
     <nav>
       <a class="hide" href="#how">How it works</a>
-      <a class="hide" href="#meetings">Meetings</a>
       <a class="hide" href="#needs">Requirements</a>
       <a href="#install">Install</a>
       <a href="https://github.com/toleberdyyeva/tynda">GitHub</a>
@@ -177,7 +176,7 @@
   <div class="hero">
     <div class="alpha">Early alpha · free · open source</div>
     <h1>Hold <em>fn</em>. Speak.<br>It types.</h1>
-    <p class="lede">Tynda is voice dictation and meeting notes for the Mac. Your speech is recognised on your own machine and typed wherever your cursor is.</p>
+    <p class="lede">Tynda is a small Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac and is typed wherever your cursor is.</p>
     <div class="cta">
       <a class="btn primary" href="#install">Install from source</a>
       <a class="btn" href="https://github.com/toleberdyyeva/tynda">View on GitHub</a>
@@ -215,7 +214,7 @@
       <div class="card">
         <div class="k"><kbd>esc</kbd></div>
         <h3>Changed your mind</h3>
-        <p>Esc throws the recording away. Nothing is typed. If something landed in the wrong place, the last phrases are kept in a local history file.</p>
+        <p>Esc throws it away and nothing is typed. If the text landed in the wrong place, the last phrase is still one click away in the menu.</p>
       </div>
     </div>
   </section>
@@ -223,31 +222,16 @@
   <section id="private">
     <div class="two">
       <div>
-        <h2>Your voice stays on your Mac</h2>
-        <p class="sub">Speech recognition is Whisper large-v3-turbo running locally through Apple's MLX. Once the model is downloaded, dictation works with the network cable pulled out.</p>
+        <h2>Nothing is saved. Nothing leaves your Mac.</h2>
+        <p class="sub">Your voice is recognised on your Mac by Whisper large-v3-turbo running through Apple's MLX. Once the model is downloaded, Tynda works with the network cable pulled out.</p>
       </div>
       <div class="card">
         <ul class="plain">
           <li><b>No account.</b> Nothing to sign up for.</li>
           <li><b>No server.</b> There is no Tynda cloud for audio to go to.</li>
           <li><b>No telemetry.</b> The only log is a text file on your disk.</li>
-          <li><b>One exception, your choice.</b> Meeting summaries send the transcript text to the LLM you point Tynda at. Skip it and you still get the transcript.</li>
+          <li><b>No history.</b> The audio is deleted the moment it becomes text, and the text goes only into the app you are typing in.</li>
         </ul>
-      </div>
-    </div>
-  </section>
-
-  <section id="meetings">
-    <div class="two">
-      <div class="card transcript">
-        <p><b>Me</b> <span>00:00</span><br>Let's ship the new site on Friday the twentieth.</p>
-        <p><b>Them</b> <span>00:09</span><br>Friday doesn't work, payments aren't ready. Tuesday instead. I'll finish payments by Monday, you check the mobile version.</p>
-        <p style="margin-bottom:0"><b>Action items</b><br>Them — finish payments — by Monday<br>Me — check the mobile version</p>
-      </div>
-      <div>
-        <h2>Meetings, without a bot in the call</h2>
-        <p class="sub">Click the Tynda icon in the menu bar and record. Tynda captures your microphone and the computer's sound as two separate tracks, so it knows who is you and who is them — in Meet, Zoom, a phone call on speaker, anything that makes sound.</p>
-        <p class="sub" style="margin-bottom:0">When you stop, you get a transcript and a short written summary with decisions and action items, as plain Markdown files in a folder you own.</p>
       </div>
     </div>
   </section>
@@ -261,21 +245,20 @@
       <tr><td>Memory</td><td><b>8 GB minimum, 16 GB recommended.</b> The model stays loaded and takes about 2 GB.</td></tr>
       <tr><td>Disk</td><td><b>About 3 GB</b> for the model and its Python packages.</td></tr>
       <tr><td>Keyboard</td><td>The <b>fn / 🌐 key</b> set to "Do Nothing" in System Settings → Keyboard.</td></tr>
-      <tr><td>Languages</td><td>Russian, English and Kazakh out of the box, detected per phrase. Others are a two-line change.</td></tr>
       <tr><td>Not yet</td><td>Windows, Linux, iPhone.</td></tr>
     </table>
   </section>
 
   <section id="install">
     <h2>Install</h2>
-    <p class="sub">There is no signed download yet, so Tynda is installed from source. You need the Xcode Command Line Tools and Homebrew. The script does the rest, then a setup window walks you through the permissions and your first dictation.</p>
+    <p class="sub">There is no signed download yet, so Tynda is installed from source. You need the Xcode Command Line Tools. The script does the rest, then a setup window walks you through the permissions and your first dictation.</p>
 <pre>git clone https://github.com/toleberdyyeva/tynda.git
 cd tynda
 ./install.sh     <span class="c"># checks your Mac, gets the model, builds, opens Tynda</span></pre>
     <div class="steps">
       <div><b>Microphone</b>macOS asks once. Click Allow.</div>
       <div><b>Accessibility</b>So Tynda can notice the fn key and type the text for you.</div>
-      <div><b>System audio</b>Asked the first time you record a meeting, to hear the other side.</div>
+      <div><b>The fn key</b>Has to be free: "Do Nothing" in Keyboard settings. The setup window checks it.</div>
     </div>
   </section>
 
@@ -283,7 +266,7 @@ cd tynda
     <div class="honest">
       <h2>What "early alpha" means here</h2>
       <p>Tynda was built in a day and has been used on one Mac. It works for its author every day; it has not met yours yet.</p>
-      <p>It is not signed with an Apple Developer ID, so macOS asks for the permissions again after every update. There is no settings window and the hotkey is fixed to fn.</p>
+      <p>It is not signed with an Apple Developer ID, so macOS asks for the permissions again after every update. The hotkey is fixed to fn.</p>
       <p style="margin:0">If it breaks, <a href="https://github.com/toleberdyyeva/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
     </div>
   </section>

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Removes Tynda from this Mac. Your recordings in ~/Tynda are never touched.
+# Removes Tynda from this Mac.
 #
 #   ./uninstall.sh          the app, its settings, its permissions and the speech model environment
 #   ./uninstall.sh --all    also the downloaded speech model (1.6 GB) — the next install downloads it again
@@ -16,7 +16,7 @@ say_step "Quitting Tynda"
 pkill -x Tynda 2>/dev/null || true
 sleep 1
 
-say_step "Forgetting permissions (microphone, accessibility, screen recording)"
+say_step "Forgetting permissions (microphone, accessibility)"
 tccutil reset All app.tynda.mac >/dev/null 2>&1 || true
 
 say_step "Removing the app, its settings and the speech model environment"
@@ -32,6 +32,6 @@ fi
 
 echo
 echo "Tynda is removed."
-[[ -d "$HOME/Tynda" ]] && echo "Your recordings and dictation history are still in ~/Tynda — delete that folder yourself if you want them gone."
+[[ -d "$HOME/Tynda" ]] && echo "An early version kept files in ~/Tynda. Tynda no longer uses that folder — delete it yourself if you do not need them."
 [[ "${1:-}" != "--all" && -d "$MODEL_CACHE" ]] && echo "The speech model (1.6 GB) was kept so that a reinstall is quick. Remove it too with: ./uninstall.sh --all"
 exit 0

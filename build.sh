@@ -3,13 +3,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 APP=Tynda.app
+rm -rf Tynda.app   # start clean, so nothing from an older build rides along
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
   -framework Cocoa -framework ApplicationServices -framework AVFoundation \
-  -framework ScreenCaptureKit -framework CoreMedia -framework UserNotifications \
-  -framework ServiceManagement -framework QuartzCore \
   Sources/main.m -o "$APP/Contents/MacOS/Tynda"
-cp process.py dictate_server.py Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp dictate_server.py Resources/AppIcon.icns "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -24,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>Tynda listens to your voice to type what you say and to transcribe your meetings.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Tynda listens to your voice to type what you say.</string>
 </dict>
 </plist>
 EOF

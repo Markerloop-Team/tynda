@@ -20,13 +20,7 @@ OS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 xcrun --find clang >/dev/null 2>&1 || fail "The Xcode Command Line Tools are missing. Run:  xcode-select --install  — then run this script again."
 echo "macOS $(sw_vers -productVersion), Apple silicon, compiler found."
 
-say_step "Checking ffmpeg"
 export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
-if ! command -v ffmpeg >/dev/null; then
-  command -v brew >/dev/null || fail "ffmpeg is missing and Homebrew is not installed. Install ffmpeg (https://brew.sh, then: brew install ffmpeg) and run this script again."
-  brew install ffmpeg
-fi
-echo "ffmpeg: $(command -v ffmpeg)"
 
 say_step "Setting up the speech model environment"
 mkdir -p "$SUPPORT"
@@ -76,6 +70,5 @@ cat <<EOF
 A setup window has opened. It walks you through the last steps:
 the microphone, Accessibility, the fn key — and lets you try your first dictation.
 
-Recordings and dictation history live in ~/Tynda.
 To remove Tynda later: ./uninstall.sh
 EOF

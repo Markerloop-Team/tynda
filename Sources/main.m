@@ -1,23 +1,13 @@
-// Tynda — a personal menu bar recorder: microphone + system audio into two
-// files, then a local pipeline (process.py) turns them into a transcript and a note.
+// Tynda — voice instead of the keyboard. Hold fn, speak, and the text is typed where the cursor is.
+// Nothing is saved: not the audio, not the text.
 //
 // Objective-C on purpose: it builds with the plain Command Line Tools.
 
 #import <AVFoundation/AVFoundation.h>
 #import <Cocoa/Cocoa.h>
-#import <ScreenCaptureKit/ScreenCaptureKit.h>
-#import <UserNotifications/UserNotifications.h>
 
-// The Python scripts travel inside the app bundle.
+// The Python script travels inside the app bundle.
 static NSURL *ScriptsDir(void) { return NSBundle.mainBundle.resourceURL; }
-
-// Recordings, transcripts and notes. Change with: defaults write app.tynda.mac notesDir /some/folder
-static NSURL *NotesDir(void) {
-    NSString *custom = NSProcessInfo.processInfo.environment[@"TYNDA_NOTES_DIR"];  // for tests and demos
-    if (!custom.length) custom = [NSUserDefaults.standardUserDefaults stringForKey:@"notesDir"];
-    NSString *path = custom.length ? custom.stringByExpandingTildeInPath : [NSHomeDirectory() stringByAppendingPathComponent:@"Tynda"];
-    return [NSURL fileURLWithPath:path];
-}
 
 // The Python that has mlx-whisper installed: the one install.sh creates, or a `uv tool install mlx-whisper`.
 // Override with: defaults write app.tynda.mac python /path/to/python
@@ -38,7 +28,6 @@ static NSString *L(NSString *en, NSString *ru) {
     dispatch_once(&once, ^{ russian = [NSLocale.preferredLanguages.firstObject hasPrefix:@"ru"]; });
     return russian ? ru : en;
 }
-static NSString *TyndaLang(void) { return L(@"en", @"ru"); }
 
 // Diagnostics go to ~/Library/Logs/Tynda.log.
 static void Log(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
@@ -57,114 +46,6 @@ static void Log(NSString *format, ...) {
     [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
     [h closeFile];
 }
-static BOOL SelfTest(void) { return [NSProcessInfo.processInfo.arguments containsObject:@"--selftest"]; }
-
-#pragma mark - System audio (what the other side says)
-
-@interface SystemAudioRecorder : NSObject <SCStreamOutput, SCStreamDelegate>
-@property(atomic, strong) NSDate *firstSampleAt;
-- (void)startWithURL:(NSURL *)url completion:(void (^)(NSError *error))done;
-- (void)stopWithCompletion:(void (^)(BOOL wroteFile))done;
-@end
-
-@implementation SystemAudioRecorder {
-    SCStream *_stream;
-    AVAssetWriter *_writer;
-    AVAssetWriterInput *_input;
-    BOOL _sessionStarted;
-    dispatch_queue_t _queue;
-}
-
-- (instancetype)init {
-    if ((self = [super init])) _queue = dispatch_queue_create("tynda.system-audio", DISPATCH_QUEUE_SERIAL);
-    return self;
-}
-
-- (void)startWithURL:(NSURL *)url completion:(void (^)(NSError *))done {
-    [SCShareableContent getShareableContentExcludingDesktopWindows:NO
-                                               onScreenWindowsOnly:NO
-                                                 completionHandler:^(SCShareableContent *content, NSError *error) {
-        if (error || content.displays.count == 0) {
-            done(error ?: [NSError errorWithDomain:@"Tynda" code:1 userInfo:@{NSLocalizedDescriptionKey: @"No display found"}]);
-            return;
-        }
-        SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:content.displays.firstObject
-                                                     excludingApplications:@[]
-                                                          exceptingWindows:@[]];
-        SCStreamConfiguration *cfg = [SCStreamConfiguration new];
-        cfg.capturesAudio = YES;
-        cfg.excludesCurrentProcessAudio = YES;
-        cfg.sampleRate = 48000;
-        cfg.channelCount = 2;
-        // Video is not used; keep it as cheap as possible.
-        cfg.width = 2;
-        cfg.height = 2;
-        cfg.minimumFrameInterval = CMTimeMake(1, 1);
-
-        NSError *err = nil;
-        AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:url fileType:AVFileTypeAppleM4A error:&err];
-        if (!writer) { done(err); return; }
-        AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:@{
-            AVFormatIDKey: @(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: @48000,
-            AVNumberOfChannelsKey: @2,
-            AVEncoderBitRateKey: @96000,
-        }];
-        input.expectsMediaDataInRealTime = YES;
-        [writer addInput:input];
-        if (![writer startWriting]) { done(writer.error); return; }
-        self->_writer = writer;
-        self->_input = input;
-
-        SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:cfg delegate:self];
-        if (![stream addStreamOutput:self type:SCStreamOutputTypeAudio sampleHandlerQueue:self->_queue error:&err]) {
-            done(err);
-            return;
-        }
-        [stream startCaptureWithCompletionHandler:^(NSError *startError) {
-            if (!startError) self->_stream = stream;
-            done(startError);
-        }];
-    }];
-}
-
-- (void)stream:(SCStream *)stream didOutputSampleBuffer:(CMSampleBufferRef)sb ofType:(SCStreamOutputType)type {
-    if (type != SCStreamOutputTypeAudio || !CMSampleBufferIsValid(sb)) return;
-    if (!_writer || _writer.status != AVAssetWriterStatusWriting) return;
-    if (!_sessionStarted) {
-        [_writer startSessionAtSourceTime:CMSampleBufferGetPresentationTimeStamp(sb)];
-        _sessionStarted = YES;
-        self.firstSampleAt = [NSDate date];
-    }
-    if (_input.isReadyForMoreMediaData) [_input appendSampleBuffer:sb];
-}
-
-- (void)stream:(SCStream *)stream didStopWithError:(NSError *)error {
-    NSLog(@"system audio stream stopped: %@", error);
-}
-
-- (void)stopWithCompletion:(void (^)(BOOL))done {
-    void (^finish)(void) = ^{
-        dispatch_async(self->_queue, ^{
-            if (!self->_writer || !self->_sessionStarted) {
-                [self->_writer cancelWriting];
-                done(NO);
-                return;
-            }
-            [self->_input markAsFinished];
-            [self->_writer finishWritingWithCompletionHandler:^{
-                done(self->_writer.status == AVAssetWriterStatusCompleted);
-            }];
-        });
-    };
-    if (_stream) {
-        [_stream stopCaptureWithCompletionHandler:^(NSError *e) { finish(); }];
-        _stream = nil;
-    } else {
-        finish();
-    }
-}
-@end
 
 #pragma mark - Dictation: microphone into memory, with a live level for the waveform
 
@@ -306,6 +187,13 @@ static BOOL SelfTest(void) { return [NSProcessInfo.processInfo.arguments contain
     NSTask *task = [NSTask new];
     task.executableURL = [NSURL fileURLWithPath:python];
     task.arguments = @[[ScriptsDir() URLByAppendingPathComponent:@"dictate_server.py"].path];
+    // People mostly speak the languages their Mac is set up in. The engine uses that only to break
+    // a tie between close relatives on a short phrase; it is a hint, not a setting.
+    NSMutableOrderedSet<NSString *> *hint = [NSMutableOrderedSet new];
+    for (NSString *tag in NSLocale.preferredLanguages) [hint addObject:[tag componentsSeparatedByString:@"-"].firstObject.lowercaseString];
+    NSMutableDictionary *env = [NSProcessInfo.processInfo.environment mutableCopy];
+    env[@"TYNDA_HINT"] = [hint.array componentsJoinedByString:@","];
+    task.environment = env;
     NSPipe *inPipe = [NSPipe pipe], *outPipe = [NSPipe pipe];
     task.standardInput = inPipe;
     task.standardOutput = outPipe;
@@ -581,8 +469,6 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 #pragma mark - App
 
-#include "UI.m"
-
 #pragma mark - The mark in the menu bar
 
 // The app icon in one colour: the speech bubble with the wave cut out of it.
@@ -707,6 +593,8 @@ static NSImage *BarsImage(NSColor *color) {
     _window.releasedWhenClosed = NO;
     _window.delegate = self;
     _window.movableByWindowBackground = YES;
+    // Show up where the user is, even when they are in a full-screen app.
+    _window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
 
     NSImageView *icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
     [icon.widthAnchor constraintEqualToConstant:72].active = YES;
@@ -734,9 +622,6 @@ static NSImage *BarsImage(NSColor *color) {
     NSTextField *hint = [self label:L(@"Hold fn — talk — let go.\nDouble-tap fn — hands-free; fn again to finish.\nEsc — cancel.",
                                       @"Удерживай fn — говори — отпусти.\nДвойной fn — без удержания; ещё раз fn — готово.\nEsc — отмена.")
                                size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
-    NSTextField *meetings = [self label:L(@"Meetings: the Tynda icon in the menu bar → Record meeting. macOS will ask for one more permission then, to record the other side of the call.",
-                                          @"Встречи: значок Tynda в строке меню → «Начать запись». Тогда macOS спросит ещё одно разрешение — чтобы записывать собеседников.")
-                                   size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
     _done = [NSButton buttonWithTitle:L(@"Done", @"Готово") target:self action:@selector(doneAction)];
     _done.bezelStyle = NSBezelStyleRounded;
     _done.keyEquivalent = @"\r";
@@ -744,7 +629,7 @@ static NSImage *BarsImage(NSColor *color) {
     [_done.widthAnchor constraintEqualToConstant:128].active = YES;
     NSView *spacer = [NSView new];
     NSStackView *footer = [NSStackView stackViewWithViews:@[spacer, _done]];
-    NSStackView *stack = [NSStackView stackViewWithViews:@[icon, title, sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryLabel, _tryField, hint, meetings, footer]];
+    NSStackView *stack = [NSStackView stackViewWithViews:@[icon, title, sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryLabel, _tryField, hint, footer]];
     stack.orientation = NSUserInterfaceLayoutOrientationVertical;
     stack.alignment = NSLayoutAttributeLeading;
     stack.spacing = 14;
@@ -753,7 +638,7 @@ static NSImage *BarsImage(NSColor *color) {
     [stack setCustomSpacing:22 afterView:sub];
     [stack setCustomSpacing:8 afterView:_tryLabel];
     [stack setCustomSpacing:8 afterView:_tryField];
-    [stack setCustomSpacing:18 afterView:meetings];
+    [stack setCustomSpacing:18 afterView:hint];
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     NSView *content = [NSView new];
     [content addSubview:stack];
@@ -781,7 +666,7 @@ static NSImage *BarsImage(NSColor *color) {
         [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [content.widthAnchor constraintEqualToConstant:520],
     ]];
-    for (NSView *v in @[sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryField, hint, meetings, footer]) {
+    for (NSView *v in @[sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryField, hint, footer]) {
         [v.widthAnchor constraintEqualToConstant:inner].active = YES;
     }
 }
@@ -869,6 +754,11 @@ static NSImage *BarsImage(NSColor *color) {
     [_window center];
     [NSApp activateIgnoringOtherApps:YES];
     [_window makeKeyAndOrderFront:nil];
+    [_window orderFrontRegardless];  // macOS may refuse to activate a background app; show the window anyway
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        Log(@"setup window: visible=%d activeSpace=%d seen=%d frame=%@ screen=%@", self->_window.isVisible, self->_window.isOnActiveSpace,
+            (self->_window.occlusionState & NSWindowOcclusionStateVisible) != 0, NSStringFromRect(self->_window.frame), NSStringFromRect(self->_window.screen.frame));
+    });
 }
 
 - (void)windowWillClose:(NSNotification *)note {
@@ -889,7 +779,7 @@ static const CGKeyCode kKeyFn = 63, kKeyGlobe = 179, kKeyEsc = 53, kKeyV = 9;
 
 static BOOL DemoDictation(void) { return [NSProcessInfo.processInfo.arguments containsObject:@"--demo-dictation"]; }
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, TyndaActions>
+@interface AppDelegate : NSObject <NSApplicationDelegate>
 - (CGEventRef)handleEvent:(CGEventRef)event type:(CGEventType)type;
 @end
 
@@ -899,16 +789,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 @implementation AppDelegate {
     NSStatusItem *_statusItem;
-    NSMenuItem *_toggleItem;
     NSMenuItem *_infoItem;
-    AVAudioRecorder *_mic;
-    SystemAudioRecorder *_system;
-    NSURL *_sessionDir;
-    NSDate *_startedAt;
-    NSTimer *_timer;
-    NSInteger _processing;
-    BOOL _busy;
-
     // Dictation
     NSMenuItem *_dictationItem;
     NSMenuItem *_accessItem;
@@ -931,25 +812,15 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSString *_lastText;
     NSMenuItem *_copyLastItem;
     Onboarding *_onboarding;
-    NSMenu *_menu;
-    TyndaPopover *_popover;
-    TyndaLibrary *_library;
-    NSTimer *_uiTimer;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
+    _statusItem.button.image = BarsImage(nil);
     NSMenu *menu = [NSMenu new];
-    _infoItem = [[NSMenuItem alloc] initWithTitle:L(@"Ready", @"Готов к записи") action:nil keyEquivalent:@""];
+    _infoItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     _infoItem.enabled = NO;
     [menu addItem:_infoItem];
-    [menu addItem:NSMenuItem.separatorItem];
-    _toggleItem = [[NSMenuItem alloc] initWithTitle:L(@"Record meeting", @"Начать запись") action:@selector(toggle) keyEquivalent:@"r"];
-    _toggleItem.target = self;
-    [menu addItem:_toggleItem];
-    NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:L(@"Open notes folder", @"Открыть папку заметок") action:@selector(openNotes) keyEquivalent:@"o"];
-    open.target = self;
-    [menu addItem:open];
     [menu addItem:NSMenuItem.separatorItem];
     _dictationItem = [[NSMenuItem alloc] initWithTitle:L(@"Dictation with fn", @"Диктовка по fn") action:@selector(toggleDictation) keyEquivalent:@""];
     _dictationItem.target = self;
@@ -964,36 +835,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     [menu addItem:_accessItem];
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[[NSMenuItem alloc] initWithTitle:L(@"Quit", @"Выйти") action:@selector(terminate:) keyEquivalent:@"q"]];
-    // A click opens the glass panel; a right click (or ctrl-click) opens the plain menu.
-    _menu = menu;
-    _statusItem.button.target = self;
-    _statusItem.button.action = @selector(statusClicked:);
-    [_statusItem.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
-    _popover = [[TyndaPopover alloc] initWithActions:self];
-    _library = [[TyndaLibrary alloc] initWithActions:self];
-    _uiTimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) {
-        [self->_popover refresh];
-        [self->_library refreshStatus];
-    }];
-    [NSRunLoop.mainRunLoop addTimer:_uiTimer forMode:NSRunLoopCommonModes];
-    [self refresh];
-    [UNUserNotificationCenter.currentNotificationCenter
-        requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
-                      completionHandler:^(BOOL granted, NSError *error) {}];
-
+    _statusItem.menu = menu;
     [self setUpDictation];
-
-    // `--selftest N`: record N seconds, process, quit. Used to verify the build.
-    NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
-    NSUInteger i = [args indexOfObject:@"--selftest"];
-    if (i != NSNotFound && i + 1 < args.count) {
-        double secs = args[i + 1].doubleValue;
-        [self startRecording:^{
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(secs * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self stopRecording:^{}];
-            });
-        }];
-    }
 }
 
 #pragma mark Dictation
@@ -1011,6 +854,9 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 - (void)refreshDictationMenu {
     _dictationItem.state = [self dictationEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
+    if (!_tap || !_transcriber.ready) _infoItem.title = L(@"Not ready yet — open Setup…", @"Ещё не готово — открой «Настройка…»");
+    else if (![self dictationEnabled]) _infoItem.title = L(@"Dictation is off", @"Диктовка выключена");
+    else _infoItem.title = L(@"Hold fn and speak", @"Удерживай fn и говори");
 }
 
 - (void)showOnboarding {
@@ -1045,6 +891,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _dictation = [DictationRecorder new];
     _island = [Island new];
     _transcriber = [Transcriber new];
+    __weak AppDelegate *weakMe = self;
+    _transcriber.onReady = ^{ [weakMe refreshDictationMenu]; };
     [_transcriber start];
     [self refreshDictationMenu];
 
@@ -1070,23 +918,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         };
         return;
     }
-    if (SelfTest()) return;
-
     // Watching fn and pasting need the Accessibility permission; the setup window walks through it.
     Log(@"dictation: accessibility trusted=%d, microphone=%d", AXIsProcessTrusted(), [Onboarding micGranted]);
     [self installEditMenu];
-    // `--show-library N` / `--show-popover`: open that surface at launch. Used to check the design.
-    NSArray<NSString *> *launchArgs = NSProcessInfo.processInfo.arguments;
-    if ([launchArgs containsObject:@"--show-library"]) {
-        NSUInteger at = [launchArgs indexOfObject:@"--show-library"];
-        [self showLibrary:at + 1 < launchArgs.count ? (LibrarySection)launchArgs[at + 1].integerValue : SecMeetings];
-    } else if ([launchArgs containsObject:@"--show-popover"]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self->_popover toggleBelow:self->_statusItem.button];
-        });
-    } else if ([Onboarding needed]) {
-        [self showOnboarding];
-    }
+    if ([Onboarding needed]) [self showOnboarding];
     [self installTap];
     if (!_tap) {
         _tapTimer = [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *t) {
@@ -1312,7 +1147,6 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
             [self demoFinish:error ? [@"ERROR: " stringByAppendingString:error] : @""];
             return;
         }
-        [self logDictation:text];
         self->_lastText = text;
         self->_copyLastItem.hidden = NO;
         if (DemoDictation()) {
@@ -1338,21 +1172,6 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     if (!_demoOut) return;
     [text writeToFile:_demoOut atomically:YES encoding:NSUTF8StringEncoding error:nil];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
-}
-
-// Every dictated phrase is also kept in a local file, in case a paste lands in the wrong place.
-- (void)logDictation:(NSString *)text {
-    NSDateFormatter *fmt = [NSDateFormatter new];
-    fmt.dateFormat = @"yyyy-MM-dd HH:mm";
-    NSString *line = [NSString stringWithFormat:@"- %@ — %@\n", [fmt stringFromDate:[NSDate date]], text];
-    NSString *path = [NotesDir() URLByAppendingPathComponent:@"dictation.md"].path;
-    [NSFileManager.defaultManager createDirectoryAtURL:NotesDir() withIntermediateDirectories:YES attributes:nil error:nil];
-    if (![NSFileManager.defaultManager fileExistsAtPath:path]) [NSFileManager.defaultManager createFileAtPath:path contents:nil attributes:nil];
-    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:path];
-    [h seekToEndOfFile];
-    [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-    [h closeFile];
-    [_library reloadIfVisible];
 }
 
 // Put the text on the clipboard, press ⌘V in the focused app, then give the clipboard back.
@@ -1395,220 +1214,13 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     });
 }
 
-#pragma mark Meetings
-
-- (void)openNotes {
-    [NSFileManager.defaultManager createDirectoryAtURL:NotesDir() withIntermediateDirectories:YES attributes:nil error:nil];
-    [NSWorkspace.sharedWorkspace openURL:NotesDir()];
-}
-
-- (void)statusClicked:(id)sender {
-    NSEvent *e = NSApp.currentEvent;
-    if (e.type == NSEventTypeRightMouseUp || (e.modifierFlags & NSEventModifierFlagControl)) {
-        [_popover close];
-        _statusItem.menu = _menu;
-        [_statusItem.button performClick:nil];
-        _statusItem.menu = nil;
-        return;
-    }
-    [_popover toggleBelow:_statusItem.button];
-}
-
-- (BOOL)isRecordingMeeting { return _startedAt != nil; }
-- (NSDate *)meetingStartedAt { return _startedAt; }
-- (BOOL)isProcessingMeeting { return _processing > 0; }
-- (BOOL)engineReady { return _transcriber.ready; }
-- (BOOL)fnListening { return _tap != NULL; }
-- (void)showLibrary:(LibrarySection)section { [_library show:section]; }
-- (void)showLibraryMeeting:(NSString *)folder { [_library showMeeting:folder]; }
-
-- (void)toggle {
-    if (_busy) return;
-    _busy = YES;
-    void (^done)(void) = ^{ self->_busy = NO; };
-    if (_startedAt) [self stopRecording:done]; else [self startRecording:done];
-}
-
-- (void)refresh {
-    BOOL recording = _startedAt != nil;
-    NSString *title = @"";
-    if (recording) {
-        int s = (int)[[NSDate date] timeIntervalSinceDate:_startedAt];
-        title = [NSString stringWithFormat:@" %d:%02d", s / 60, s % 60];
-    } else if (_processing > 0) {
-        title = @" …";
-    }
-    _statusItem.button.image = BarsImage(recording ? NSColor.systemRedColor : nil);
-    _statusItem.button.imagePosition = NSImageLeft;
-    _statusItem.button.title = title;
-    _toggleItem.title = recording ? L(@"Stop and transcribe", @"Остановить и расшифровать") : L(@"Record meeting", @"Начать запись");
-    if (recording) _infoItem.title = _system ? L(@"Recording", @"Идёт запись") : L(@"Recording (microphone only)", @"Идёт запись (только микрофон)");
-    else _infoItem.title = _processing > 0 ? L(@"Transcribing…", @"Расшифровываю…") : L(@"Ready", @"Готов к записи");
-}
-
-// Completion blocks are always called on the main queue.
-- (void)startRecording:(void (^)(void))done {
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!granted) {
-                [self alert:L(@"No microphone access", @"Нет доступа к микрофону")
-                       text:L(@"System Settings → Privacy & Security → Microphone → turn on Tynda.", @"Системные настройки → Конфиденциальность и безопасность → Микрофон → включить Tynda.")];
-                done();
-                return;
-            }
-            NSDateFormatter *fmt = [NSDateFormatter new];
-            fmt.dateFormat = @"yyyy-MM-dd_HH-mm-ss";
-            NSURL *dir = [NotesDir() URLByAppendingPathComponent:[fmt stringFromDate:[NSDate date]]];
-            NSError *err = nil;
-            [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:&err];
-            AVAudioRecorder *rec = err ? nil : [[AVAudioRecorder alloc] initWithURL:[dir URLByAppendingPathComponent:@"mic.m4a"] settings:@{
-                AVFormatIDKey: @(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: @48000,
-                AVNumberOfChannelsKey: @1,
-                AVEncoderBitRateKey: @64000,
-            } error:&err];
-            if (!rec || ![rec record]) {
-                [self alert:L(@"Could not start recording", @"Не удалось начать запись") text:err.localizedDescription ?: L(@"Microphone is unavailable.", @"Микрофон недоступен.")];
-                done();
-                return;
-            }
-            self->_mic = rec;
-            self->_sessionDir = dir;
-            self->_startedAt = [NSDate date];
-
-            SystemAudioRecorder *sys = [SystemAudioRecorder new];
-            [sys startWithURL:[dir URLByAppendingPathComponent:@"system.m4a"] completion:^(NSError *sysErr) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    if (sysErr) {
-                        self->_system = nil;
-                        [self alert:L(@"Recording the microphone only", @"Пишу только микрофон")
-                               text:[NSString stringWithFormat:L(@"The other side is not being recorded: permission is missing. System Settings → Privacy & Security → Screen & System Audio Recording → turn on Tynda, then restart it.\n\n(%@)", @"Звук собеседников не записывается: нет разрешения. Системные настройки → Конфиденциальность и безопасность → Запись экрана и системного звука → включить Tynda, затем перезапустить его.\n\n(%@)"), sysErr.localizedDescription]];
-                    } else {
-                        self->_system = sys;
-                    }
-                    self->_timer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self refresh]; }];
-                    [self refresh];
-                    done();
-                });
-            }];
-        });
-    }];
-}
-
-- (void)stopRecording:(void (^)(void))done {
-    if (!_sessionDir || !_startedAt) { done(); return; }
-    NSURL *dir = _sessionDir;
-    NSDate *startedAt = _startedAt;
-    SystemAudioRecorder *sys = _system;
-    [_timer invalidate];
-    _timer = nil;
-    [_mic stop];
-    _mic = nil;
-    NSTimeInterval duration = [[NSDate date] timeIntervalSinceDate:startedAt];
-
-    void (^finish)(BOOL) = ^(BOOL hasSystem) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            double offset = sys.firstSampleAt ? [sys.firstSampleAt timeIntervalSinceDate:startedAt] : 0;
-            NSDictionary *meta = @{
-                @"started_at": [[NSISO8601DateFormatter new] stringFromDate:startedAt],
-                @"duration_sec": @(duration),
-                @"system_offset_sec": @(offset),
-                @"has_system": @(hasSystem),
-            };
-            NSData *data = [NSJSONSerialization dataWithJSONObject:meta options:NSJSONWritingPrettyPrinted error:nil];
-            [data writeToURL:[dir URLByAppendingPathComponent:@"meta.json"] atomically:YES];
-            self->_system = nil;
-            self->_startedAt = nil;
-            self->_sessionDir = nil;
-            self->_processing += 1;
-            [self refresh];
-            [self process:dir];
-            done();
-        });
-    };
-    if (sys) [sys stopWithCompletion:finish]; else finish(NO);
-}
-
-- (void)process:(NSURL *)dir {
-    NSString *python = PythonPath();
-    if (!python) {
-        _processing -= 1;
-        [self refresh];
-        [self alert:L(@"Could not start transcription", @"Не удалось запустить расшифровку") text:L(@"No Python with mlx-whisper found. Run install.sh from the project folder.", @"Не найден Python с mlx-whisper. Запусти install.sh из папки проекта.")];
-        return;
-    }
-    NSTask *task = [NSTask new];
-    task.executableURL = [NSURL fileURLWithPath:python];
-    task.arguments = @[[ScriptsDir() URLByAppendingPathComponent:@"process.py"].path, dir.path];
-    NSMutableDictionary *env = [NSProcessInfo.processInfo.environment mutableCopy];
-    env[@"TYNDA_LANG"] = TyndaLang();
-    // Notes can come from any command-line LLM: defaults write app.tynda.mac noteCommand "ollama run llama3.2"
-    NSString *noteCommand = [NSUserDefaults.standardUserDefaults stringForKey:@"noteCommand"];
-    if (noteCommand.length) env[@"TYNDA_NOTE_CMD"] = noteCommand;
-    task.environment = env;
-    NSString *logPath = [dir URLByAppendingPathComponent:@"process.log"].path;
-    [NSFileManager.defaultManager createFileAtPath:logPath contents:nil attributes:nil];
-    NSFileHandle *log = [NSFileHandle fileHandleForWritingAtPath:logPath];
-    if (log) {
-        task.standardOutput = log;
-        task.standardError = log;
-    }
-    task.terminationHandler = ^(NSTask *t) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self->_processing -= 1;
-            [self refresh];
-            BOOL ok = t.terminationStatus == 0;
-            NSURL *noteURL = [dir URLByAppendingPathComponent:@"note.md"];
-            NSURL *transcriptURL = [dir URLByAppendingPathComponent:@"transcript.md"];
-            if (SelfTest()) { [NSApp terminate:nil]; return; }
-            if ([NSFileManager.defaultManager fileExistsAtPath:noteURL.path] || [NSFileManager.defaultManager fileExistsAtPath:transcriptURL.path]) {
-                [self showLibraryMeeting:dir.lastPathComponent];
-            }
-            [self notify:ok ? L(@"Note is ready", @"Конспект готов") : L(@"Something went wrong", @"Не всё получилось")
-                    body:ok ? dir.lastPathComponent : L(@"See process.log in the recording's folder", @"Подробности в process.log в папке записи")];
-        });
-    };
-    NSError *err = nil;
-    if (![task launchAndReturnError:&err]) {
-        _processing -= 1;
-        [self refresh];
-        [self alert:L(@"Could not start transcription", @"Не удалось запустить расшифровку") text:err.localizedDescription];
-    }
-}
-
-- (void)notify:(NSString *)title body:(NSString *)body {
-    UNMutableNotificationContent *c = [UNMutableNotificationContent new];
-    c.title = title;
-    c.body = body;
-    [UNUserNotificationCenter.currentNotificationCenter
-        addNotificationRequest:[UNNotificationRequest requestWithIdentifier:NSUUID.UUID.UUIDString content:c trigger:nil]
-         withCompletionHandler:nil];
-}
-
-- (void)alert:(NSString *)title text:(NSString *)text {
-    if (SelfTest()) {
-        fprintf(stderr, "ALERT: %s: %s\n", title.UTF8String, text.UTF8String);
-        return;
-    }
-    [NSApp activateIgnoringOtherApps:YES];
-    NSAlert *a = [NSAlert new];
-    a.messageText = title;
-    a.informativeText = text;
-    [a runModal];
-}
+#pragma mark App
 
 // Opening Tynda again (from Applications, Spotlight, the Dock) brings up the setup window —
 // a way in even when the menu bar has no room to show the icon.
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
-    if ([Onboarding needed]) [self showOnboarding]; else [self showLibrary:SecMeetings];
+    [self showOnboarding];
     return YES;
-}
-
-- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
-    if (!_startedAt) return NSTerminateNow;
-    // Don't lose a recording in progress: finish the files first.
-    [self stopRecording:^{ [NSApp replyToApplicationShouldTerminate:YES]; }];
-    return NSTerminateLater;
 }
 @end
 

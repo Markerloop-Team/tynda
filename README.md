@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" alt="Tynda icon">
+
 # Tynda
 
 **Hold fn. Speak. It types.** Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.
@@ -18,7 +20,7 @@ A small black island with a live waveform shows at the top of the screen while T
 
 **Meeting notes**
 
-Click ◉ in the menu bar → *Record meeting*. Tynda records your microphone and the computer's sound as two separate tracks, so the transcript knows who is *Me* and who is *Them* — with no bot joining the call. When you stop, you get a transcript and, if you have a command-line LLM, a written summary with decisions and action items.
+Click the Tynda icon in the menu bar → *Record meeting*. Tynda records your microphone and the computer's sound as two separate tracks, so the transcript knows who is *Me* and who is *Them* — with no bot joining the call. When you stop, you get a transcript and, if you have a command-line LLM, a written summary with decisions and action items.
 
 ## Privacy
 
@@ -48,13 +50,27 @@ cd tynda
 
 The script checks your Mac, installs the speech model into `~/Library/Application Support/Tynda`, builds the app and puts it into `~/Applications`. It takes a few minutes the first time, mostly the model download.
 
-Then grant three permissions when macOS asks:
+When it finishes, a setup window opens and walks you through the rest, with a live check mark for each step:
 
 1. **Microphone** — to hear you.
 2. **Accessibility** — to notice the fn key and to type the text for you.
-3. **Screen & System Audio Recording** — only for meetings, to record the other side of the call.
+3. **The fn key** — it has to be free ("Do Nothing" in Keyboard settings).
+4. **Speech model** — loads in a few seconds.
+
+Then it gives you a text field to try your first dictation in. You can open this window again any time: Tynda icon → *Setup…*
+
+A fifth permission, **Screen & System Audio Recording**, is asked the first time you record a meeting — it is what lets Tynda hear the other side of the call.
 
 To update: `git pull && ./install.sh`. Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
+
+## Uninstall
+
+```bash
+./uninstall.sh          # the app, its settings, permissions and Python environment
+./uninstall.sh --all    # also the downloaded speech model (1.6 GB)
+```
+
+Your recordings in `~/Tynda` are never deleted by the script.
 
 ## Meeting summaries
 
@@ -88,7 +104,8 @@ defaults write app.tynda.mac python /path/to/python          # a Python that alr
 - `Sources/main.m` — the whole app in one Objective-C file: menu bar item, the island, microphone capture (AVAudioEngine), system audio capture (ScreenCaptureKit), the fn listener (CGEventTap) and pasting.
 - `dictate_server.py` — keeps Whisper loaded so a phrase takes about a second instead of five.
 - `process.py` — turns a meeting recording into a transcript and a note.
-- `build.sh` / `install.sh` — no Xcode project; `clang` is enough.
+- `build.sh` / `install.sh` / `uninstall.sh` — no Xcode project; `clang` is enough.
+- `tools/make_icon.m` — draws the icon; `tools/make_icon.sh` regenerates the image files.
 
 Languages: Tynda detects Russian, English and Kazakh per phrase. Add yours in `LANGS` and `PROMPTS` at the top of `dictate_server.py`.
 

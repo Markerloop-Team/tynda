@@ -580,6 +580,264 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 #pragma mark - App
 
+#pragma mark - The mark in the menu bar
+
+// Five bars of a waveform — the same mark as the app icon. Without a colour it adapts to the menu bar.
+static NSImage *BarsImage(NSColor *color) {
+    NSImage *img = [NSImage imageWithSize:NSMakeSize(18, 18) flipped:NO drawingHandler:^BOOL(NSRect r) {
+        static const CGFloat heights[5] = {0.30, 0.62, 1.00, 0.48, 0.22};
+        CGFloat barW = 2, gap = 1.6, total = 5 * barW + 4 * gap, x = (r.size.width - total) / 2, maxH = 14;
+        [(color ?: NSColor.blackColor) setFill];
+        for (int i = 0; i < 5; i++) {
+            CGFloat h = MAX(barW, maxH * heights[i]);
+            [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x, (r.size.height - h) / 2, barW, h) xRadius:1 yRadius:1] fill];
+            x += barW + gap;
+        }
+        return YES;
+    }];
+    img.template = color == nil;
+    return img;
+}
+
+#pragma mark - First run: one window that walks through the permissions
+
+@interface SetupRow : NSObject
+@property(nonatomic, strong) NSTextField *mark, *title, *detail;
+@property(nonatomic, strong) NSButton *button;
+@property(nonatomic, strong) NSView *view;
+@end
+@implementation SetupRow
+@end
+
+@interface Onboarding : NSObject <NSWindowDelegate>
++ (BOOL)micGranted;
+@property(nonatomic, copy) BOOL (^engineReady)(void);
+@property(nonatomic, copy) BOOL (^engineInstalled)(void);
+@property(nonatomic, copy) BOOL (^listening)(void);
+- (void)show;
++ (BOOL)needed;
+@end
+
+@implementation Onboarding {
+    NSWindow *_window;
+    SetupRow *_mic, *_access, *_fn, *_engine;
+    NSTextField *_tryLabel, *_tryField;
+    NSButton *_done;
+    NSTimer *_timer;
+}
+
++ (BOOL)micGranted { return [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusAuthorized; }
+
+// The fn / globe key must not be taken by a system action.
++ (BOOL)fnFree {
+    NSNumber *v = CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("AppleFnUsageType"), CFSTR("com.apple.HIToolbox")));
+    return [v isKindOfClass:NSNumber.class] && v.integerValue == 0;
+}
+
++ (BOOL)needed {
+    return ![NSUserDefaults.standardUserDefaults boolForKey:@"onboarded"] || ![self micGranted] || !AXIsProcessTrusted();
+}
+
+- (NSTextField *)label:(NSString *)text size:(CGFloat)size weight:(NSFontWeight)weight color:(NSColor *)color {
+    NSTextField *f = [NSTextField wrappingLabelWithString:text];
+    f.font = [NSFont systemFontOfSize:size weight:weight];
+    f.textColor = color;
+    f.selectable = NO;
+    return f;
+}
+
+- (SetupRow *)row:(NSString *)title action:(SEL)action {
+    SetupRow *row = [SetupRow new];
+    row.mark = [self label:@"○" size:15 weight:NSFontWeightSemibold color:NSColor.tertiaryLabelColor];
+    row.title = [self label:title size:13 weight:NSFontWeightSemibold color:NSColor.labelColor];
+    row.detail = [self label:@"" size:12 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
+    row.button = [NSButton buttonWithTitle:@"" target:self action:action];
+    row.button.bezelStyle = NSBezelStyleRounded;
+    [row.mark.widthAnchor constraintEqualToConstant:20].active = YES;
+    [row.button.widthAnchor constraintEqualToConstant:128].active = YES;
+    NSStackView *text = [NSStackView stackViewWithViews:@[row.title, row.detail]];
+    text.orientation = NSUserInterfaceLayoutOrientationVertical;
+    text.alignment = NSLayoutAttributeLeading;
+    text.spacing = 2;
+    NSStackView *h = [NSStackView stackViewWithViews:@[row.mark, text, row.button]];
+    h.alignment = NSLayoutAttributeTop;
+    h.spacing = 10;
+    h.distribution = NSStackViewDistributionFill;
+    // The text takes all the room that is left, so the buttons line up on the right edge.
+    [text.widthAnchor constraintEqualToConstant:520 - 64 - 20 - 128 - 20].active = YES;
+    h.detachesHiddenViews = NO;
+    [text setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [row.button setContentHuggingPriority:999 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [row.button setContentCompressionResistancePriority:999 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    row.view = h;
+    return row;
+}
+
+- (void)build {
+    _window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 600)
+                                          styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskFullSizeContentView
+                                            backing:NSBackingStoreBuffered
+                                              defer:NO];
+    _window.titlebarAppearsTransparent = YES;
+    _window.title = @"";
+    _window.releasedWhenClosed = NO;
+    _window.delegate = self;
+    _window.movableByWindowBackground = YES;
+
+    NSImageView *icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
+    [icon.widthAnchor constraintEqualToConstant:72].active = YES;
+    [icon.heightAnchor constraintEqualToConstant:72].active = YES;
+    NSTextField *title = [self label:L(@"Welcome to Tynda", @"Добро пожаловать в Tynda") size:24 weight:NSFontWeightBold color:NSColor.labelColor];
+    NSTextField *sub = [self label:L(@"Hold fn, speak, and the text is typed where your cursor is. Four things to set up — it takes a minute.",
+                                     @"Удерживай fn, говори — и текст появится там, где стоит курсор. Нужно настроить четыре вещи, это минута.")
+                              size:13 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
+
+    _mic = [self row:L(@"Microphone", @"Микрофон") action:@selector(micAction)];
+    _access = [self row:L(@"Accessibility", @"Универсальный доступ") action:@selector(accessAction)];
+    _fn = [self row:L(@"The fn key", @"Клавиша fn") action:@selector(fnAction)];
+    _engine = [self row:L(@"Speech model", @"Модель распознавания речи") action:@selector(engineAction)];
+
+    NSBox *line = [NSBox new];
+    line.boxType = NSBoxSeparator;
+    _tryLabel = [self label:@"" size:13 weight:NSFontWeightSemibold color:NSColor.labelColor];
+    _tryField = [NSTextField textFieldWithString:@""];
+    _tryField.placeholderString = L(@"Click here, hold fn and say something", @"Нажми сюда, удерживай fn и скажи что-нибудь");
+    _tryField.font = [NSFont systemFontOfSize:14];
+    _tryField.usesSingleLineMode = NO;
+    _tryField.cell.wraps = YES;
+    _tryField.cell.scrollable = NO;
+    [_tryField.heightAnchor constraintEqualToConstant:64].active = YES;
+    NSTextField *hint = [self label:L(@"Hold fn — talk — let go.\nDouble-tap fn — hands-free; fn again to finish.\nEsc — cancel.",
+                                      @"Удерживай fn — говори — отпусти.\nДвойной fn — без удержания; ещё раз fn — готово.\nEsc — отмена.")
+                               size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
+    NSTextField *meetings = [self label:L(@"Meetings: the Tynda icon in the menu bar → Record meeting. macOS will ask for one more permission then, to record the other side of the call.",
+                                          @"Встречи: значок Tynda в строке меню → «Начать запись». Тогда macOS спросит ещё одно разрешение — чтобы записывать собеседников.")
+                                   size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
+    _done = [NSButton buttonWithTitle:L(@"Done", @"Готово") target:self action:@selector(doneAction)];
+    _done.bezelStyle = NSBezelStyleRounded;
+    _done.keyEquivalent = @"\r";
+
+    [_done.widthAnchor constraintEqualToConstant:128].active = YES;
+    NSView *spacer = [NSView new];
+    NSStackView *footer = [NSStackView stackViewWithViews:@[spacer, _done]];
+    NSStackView *stack = [NSStackView stackViewWithViews:@[icon, title, sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryLabel, _tryField, hint, meetings, footer]];
+    stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    stack.alignment = NSLayoutAttributeLeading;
+    stack.spacing = 14;
+    stack.edgeInsets = NSEdgeInsetsMake(36, 32, 24, 32);
+    [stack setCustomSpacing:6 afterView:title];
+    [stack setCustomSpacing:22 afterView:sub];
+    [stack setCustomSpacing:8 afterView:_tryLabel];
+    [stack setCustomSpacing:8 afterView:_tryField];
+    [stack setCustomSpacing:18 afterView:meetings];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    NSView *content = [NSView new];
+    [content addSubview:stack];
+    _window.contentView = content;
+    CGFloat inner = 520 - 64;
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [stack.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        [stack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [content.widthAnchor constraintEqualToConstant:520],
+    ]];
+    for (NSView *v in @[sub, _mic.view, _access.view, _fn.view, _engine.view, line, _tryField, hint, meetings, footer]) {
+        [v.widthAnchor constraintEqualToConstant:inner].active = YES;
+    }
+}
+
+- (void)set:(SetupRow *)row ok:(BOOL)ok busy:(BOOL)busy detail:(NSString *)detail button:(NSString *)button {
+    row.mark.stringValue = ok ? @"✓" : (busy ? @"…" : @"○");
+    row.mark.textColor = ok ? NSColor.systemGreenColor : (busy ? NSColor.secondaryLabelColor : NSColor.systemOrangeColor);
+    row.detail.stringValue = detail;
+    row.button.hidden = ok || button == nil;
+    if (button) row.button.title = button;
+}
+
+- (void)refresh {
+    AVAuthorizationStatus mic = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+    BOOL micOK = mic == AVAuthorizationStatusAuthorized;
+    [self set:_mic ok:micOK busy:NO
+       detail:micOK ? L(@"Tynda can hear you.", @"Tynda тебя слышит.")
+                    : L(@"To hear what you say. Audio never leaves this Mac.", @"Чтобы слышать, что ты говоришь. Звук не покидает этот Mac.")
+       button:mic == AVAuthorizationStatusNotDetermined ? L(@"Allow", @"Разрешить") : L(@"Open Settings", @"Открыть настройки")];
+
+    BOOL axOK = AXIsProcessTrusted();
+    [self set:_access ok:axOK busy:NO
+       detail:axOK ? L(@"Tynda notices fn and can type for you.", @"Tynda видит fn и может печатать за тебя.")
+                   : L(@"To notice the fn key and to type the text into the app you are in. Turn on Tynda in the list that opens.",
+                       @"Чтобы замечать fn и вставлять текст в программу, где ты работаешь. В открывшемся списке включи Tynda.")
+       button:L(@"Open Settings", @"Открыть настройки")];
+
+    BOOL fnOK = [Onboarding fnFree];
+    [self set:_fn ok:fnOK busy:NO
+       detail:fnOK ? L(@"The key is free for dictation.", @"Клавиша свободна для диктовки.")
+                   : L(@"macOS uses fn for something else. In Keyboard settings set \"Press 🌐 key to\" to \"Do Nothing\".",
+                       @"macOS занимает fn другим действием. В настройках клавиатуры поставь «Нажатие клавиши 🌐» → «Ничего не делать».")
+       button:L(@"Open Settings", @"Открыть настройки")];
+
+    BOOL installed = self.engineInstalled && self.engineInstalled();
+    BOOL ready = self.engineReady && self.engineReady();
+    [self set:_engine ok:ready busy:installed && !ready
+       detail:ready ? L(@"Loaded. Recognition runs on this Mac.", @"Загружена. Распознавание идёт на этом Mac.")
+                    : (installed ? L(@"Loading, a few seconds…", @"Загружается, несколько секунд…")
+                                 : L(@"Not installed. Run install.sh from the project folder.", @"Не установлена. Запусти install.sh из папки проекта."))
+       button:nil];
+
+    BOOL all = micOK && axOK && ready && self.listening && self.listening();
+    _tryLabel.stringValue = all ? L(@"Everything is ready — try it", @"Всё готово — попробуй")
+                                : L(@"Try it once the steps above are green", @"Попробуй, когда шаги выше станут зелёными");
+    _tryLabel.textColor = all ? NSColor.labelColor : NSColor.tertiaryLabelColor;
+    _tryField.enabled = all;
+}
+
+- (void)openSettings:(NSString *)url { [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:url]]; }
+
+- (void)micAction {
+    if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusNotDetermined) {
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+            Log(@"setup: microphone granted=%d", granted);
+            dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; });
+        }];
+    } else {
+        [self openSettings:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"];
+    }
+}
+
+- (void)accessAction {
+    // Puts Tynda into the Accessibility list, then opens that list.
+    AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge id)kAXTrustedCheckOptionPrompt: @YES});
+    [self openSettings:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"];
+}
+
+- (void)fnAction { [self openSettings:@"x-apple.systempreferences:com.apple.Keyboard-Settings.extension"]; }
+- (void)engineAction {}
+
+- (void)doneAction {
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"onboarded"];
+    [_window close];
+}
+
+- (void)show {
+    if (!_window) [self build];
+    [self refresh];
+    if (!_timer) {
+        _timer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self refresh]; }];
+        [NSRunLoop.mainRunLoop addTimer:_timer forMode:NSRunLoopCommonModes];
+    }
+    [_window layoutIfNeeded];
+    [_window center];
+    [NSApp activateIgnoringOtherApps:YES];
+    [_window makeKeyAndOrderFront:nil];
+}
+
+- (void)windowWillClose:(NSNotification *)note {
+    [_timer invalidate];
+    _timer = nil;
+}
+@end
+
 // fn held = push-to-talk; a quick double tap = hands-free until the next fn.
 typedef NS_ENUM(NSInteger, DictState) { DIdle, DHolding, DTapWait, DLocked };
 
@@ -633,6 +891,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSUInteger _wavCounter;
     NSString *_lastText;
     NSMenuItem *_copyLastItem;
+    Onboarding *_onboarding;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
@@ -657,9 +916,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _copyLastItem.target = self;
     _copyLastItem.hidden = YES;
     [menu addItem:_copyLastItem];
-    _accessItem = [[NSMenuItem alloc] initWithTitle:L(@"Grant access for dictation…", @"Выдать доступ для диктовки…") action:@selector(openAccessibilitySettings) keyEquivalent:@""];
+    _accessItem = [[NSMenuItem alloc] initWithTitle:L(@"Setup…", @"Настройка…") action:@selector(showOnboarding) keyEquivalent:@""];
     _accessItem.target = self;
-    _accessItem.hidden = YES;
     [menu addItem:_accessItem];
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[[NSMenuItem alloc] initWithTitle:L(@"Quit", @"Выйти") action:@selector(terminate:) keyEquivalent:@"q"]];
@@ -699,11 +957,34 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 - (void)refreshDictationMenu {
     _dictationItem.state = [self dictationEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
-    _accessItem.hidden = _tap != NULL || ![self dictationEnabled];
 }
 
-- (void)openAccessibilitySettings {
-    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
+- (void)showOnboarding {
+    if (!_onboarding) {
+        _onboarding = [Onboarding new];
+        __weak AppDelegate *weakSelf = self;
+        _onboarding.engineInstalled = ^BOOL { return PythonPath() != nil; };
+        _onboarding.engineReady = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_transcriber.ready : NO; };
+        _onboarding.listening = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_tap != NULL : NO; };
+    }
+    [_onboarding show];
+}
+
+// ⌘V, ⌘C and friends need an Edit menu to exist, even in an app without a menu bar of its own.
+- (void)installEditMenu {
+    NSMenu *main = [NSMenu new];
+    NSMenuItem *appItem = [main addItemWithTitle:@"Tynda" action:nil keyEquivalent:@""];
+    appItem.submenu = [[NSMenu alloc] initWithTitle:@"Tynda"];
+    [appItem.submenu addItemWithTitle:L(@"Quit Tynda", @"Завершить Tynda") action:@selector(terminate:) keyEquivalent:@"q"];
+    NSMenuItem *editItem = [main addItemWithTitle:@"Edit" action:nil keyEquivalent:@""];
+    NSMenu *edit = [[NSMenu alloc] initWithTitle:L(@"Edit", @"Правка")];
+    [edit addItemWithTitle:L(@"Undo", @"Отменить") action:NSSelectorFromString(@"undo:") keyEquivalent:@"z"];
+    [edit addItemWithTitle:L(@"Cut", @"Вырезать") action:@selector(cut:) keyEquivalent:@"x"];
+    [edit addItemWithTitle:L(@"Copy", @"Скопировать") action:@selector(copy:) keyEquivalent:@"c"];
+    [edit addItemWithTitle:L(@"Paste", @"Вставить") action:@selector(paste:) keyEquivalent:@"v"];
+    [edit addItemWithTitle:L(@"Select All", @"Выбрать всё") action:@selector(selectAll:) keyEquivalent:@"a"];
+    editItem.submenu = edit;
+    NSApp.mainMenu = main;
 }
 
 - (void)setUpDictation {
@@ -737,12 +1018,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     }
     if (SelfTest()) return;
 
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-        Log(@"dictation: microphone granted=%d", granted);
-    }];
-    // Watching fn and pasting need the Accessibility permission. Ask once, then wait for it.
-    AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge id)kAXTrustedCheckOptionPrompt: @YES});
-    Log(@"dictation: accessibility trusted=%d", AXIsProcessTrusted());
+    // Watching fn and pasting need the Accessibility permission; the setup window walks through it.
+    Log(@"dictation: accessibility trusted=%d, microphone=%d", AXIsProcessTrusted(), [Onboarding micGranted]);
+    [self installEditMenu];
+    if ([Onboarding needed]) [self showOnboarding];
     [self installTap];
     if (!_tap) {
         _tapTimer = [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *t) {
@@ -1066,13 +1345,15 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 - (void)refresh {
     BOOL recording = _startedAt != nil;
-    NSString *title = @"◉";
+    NSString *title = @"";
     if (recording) {
         int s = (int)[[NSDate date] timeIntervalSinceDate:_startedAt];
-        title = [NSString stringWithFormat:@"🔴 %d:%02d", s / 60, s % 60];
+        title = [NSString stringWithFormat:@" %d:%02d", s / 60, s % 60];
     } else if (_processing > 0) {
-        title = @"⏳";
+        title = @" …";
     }
+    _statusItem.button.image = BarsImage(recording ? NSColor.systemRedColor : nil);
+    _statusItem.button.imagePosition = NSImageLeft;
     _statusItem.button.title = title;
     _toggleItem.title = recording ? L(@"Stop and transcribe", @"Остановить и расшифровать") : L(@"Record meeting", @"Начать запись");
     if (recording) _infoItem.title = _system ? L(@"Recording", @"Идёт запись") : L(@"Recording (microphone only)", @"Идёт запись (только микрофон)");

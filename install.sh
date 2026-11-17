@@ -70,31 +70,12 @@ cp -R Tynda.app "$DEST/Tynda.app"
 tccutil reset Accessibility app.tynda.mac >/dev/null 2>&1 || true
 open "$DEST/Tynda.app"
 
-FN_ACTION="$(defaults read com.apple.HIToolbox AppleFnUsageType 2>/dev/null || echo 0)"
-print -P "\n%BTynda is running — look for ◉ in the menu bar.%b"
+print -P "\n%BTynda is running — its icon (five small bars) is in the menu bar.%b"
 cat <<EOF
 
-Two things are left, both yours to do:
+A setup window has opened. It walks you through the last steps:
+the microphone, Accessibility, the fn key — and lets you try your first dictation.
 
-1. Permissions. macOS asks for them one by one:
-     Microphone                         — click Allow.
-     Accessibility                      — System Settings → Privacy & Security → Accessibility → turn on Tynda.
-                                          Needed to hear the fn key and to type the text for you.
-     Screen & System Audio Recording    — asked the first time you record a meeting.
-EOF
-if [[ "$FN_ACTION" != "0" ]]; then
-  cat <<EOF
-
-2. The fn key is busy. System Settings → Keyboard → "Press 🌐 key to" → choose "Do Nothing".
-EOF
-else
-  cat <<EOF
-
-2. The fn key is free — nothing to change.
-EOF
-fi
-cat <<EOF
-
-Then hold fn, say something, let go. Double-tap fn for hands-free.
 Recordings and dictation history live in ~/Tynda.
+To remove Tynda later: ./uninstall.sh
 EOF

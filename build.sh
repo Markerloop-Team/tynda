@@ -8,7 +8,7 @@ clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
   -framework Cocoa -framework ApplicationServices -framework AVFoundation \
   -framework ScreenCaptureKit -framework CoreMedia -framework UserNotifications \
   Sources/main.m -o "$APP/Contents/MacOS/Tynda"
-cp process.py dictate_server.py "$APP/Contents/Resources/"
+cp process.py dictate_server.py Resources/AppIcon.icns "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -17,6 +17,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleName</key><string>Tynda</string>
   <key>CFBundleIdentifier</key><string>app.tynda.mac</string>
   <key>CFBundleExecutable</key><string>Tynda</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>

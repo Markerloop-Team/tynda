@@ -7,6 +7,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
   -framework Cocoa -framework ApplicationServices -framework AVFoundation \
   -framework ScreenCaptureKit -framework CoreMedia -framework UserNotifications \
+  -framework ServiceManagement -framework QuartzCore \
   Sources/main.m -o "$APP/Contents/MacOS/Tynda"
 cp process.py dictate_server.py Resources/AppIcon.icns "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<EOF

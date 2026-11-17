@@ -22,6 +22,10 @@ A small black island with a live waveform shows at the top of the screen while T
 
 Click the Tynda icon in the menu bar → *Record meeting*. Tynda records your microphone and the computer's sound as two separate tracks, so the transcript knows who is *Me* and who is *Them* — with no bot joining the call. When you stop, you get a transcript and, if you have a command-line LLM, a written summary with decisions and action items.
 
+**One place for everything said**
+
+Click the Tynda icon in the menu bar and a glass panel drops down: what Tynda is doing right now, a *Record meeting* button, your last dictations (click one to copy it) and your last meetings. *Open notes* brings up the Library window — every meeting with its summary, action items and transcript, a searchable list, the full dictation history, and the settings. On macOS 26 the panel is real Liquid Glass; on macOS 14 and 15 it is the same layout on the system's ordinary blur. Right-click the icon for a plain menu.
+
 ## Privacy
 
 - Audio never leaves your Mac. Speech recognition is [Whisper large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) running locally through Apple's [MLX](https://github.com/ml-explore/mlx).
@@ -92,7 +96,7 @@ defaults write app.tynda.mac noteCommand "ollama run llama3.2"
 | Diagnostics log | `~/Library/Logs/Tynda.log` |
 | Speech model environment | `~/Library/Application Support/Tynda/venv` |
 
-Settings are plain `defaults`:
+Most settings are in the Library window → *Settings*. A few more are plain `defaults`:
 
 ```bash
 defaults write app.tynda.mac notesDir ~/Documents/Meetings   # another folder for recordings
@@ -101,7 +105,8 @@ defaults write app.tynda.mac python /path/to/python          # a Python that alr
 
 ## How it is built
 
-- `Sources/main.m` — the whole app in one Objective-C file: menu bar item, the island, microphone capture (AVAudioEngine), system audio capture (ScreenCaptureKit), the fn listener (CGEventTap) and pasting.
+- `Sources/main.m` — the engine: menu bar item, the island, microphone capture (AVAudioEngine), system audio capture (ScreenCaptureKit), the fn listener (CGEventTap), pasting, the setup window.
+- `Sources/UI.m` — the glass panel and the Library window. It is `#include`d into `main.m`, so the app stays one translation unit.
 - `dictate_server.py` — keeps Whisper loaded so a phrase takes about a second instead of five.
 - `process.py` — turns a meeting recording into a transcript and a note.
 - `build.sh` / `install.sh` / `uninstall.sh` — no Xcode project; `clang` is enough.

@@ -13,7 +13,8 @@ static NSURL *ScriptsDir(void) { return NSBundle.mainBundle.resourceURL; }
 
 // Recordings, transcripts and notes. Change with: defaults write app.tynda.mac notesDir /some/folder
 static NSURL *NotesDir(void) {
-    NSString *custom = [NSUserDefaults.standardUserDefaults stringForKey:@"notesDir"];
+    NSString *custom = NSProcessInfo.processInfo.environment[@"TYNDA_NOTES_DIR"];  // for tests and demos
+    if (!custom.length) custom = [NSUserDefaults.standardUserDefaults stringForKey:@"notesDir"];
     NSString *path = custom.length ? custom.stringByExpandingTildeInPath : [NSHomeDirectory() stringByAppendingPathComponent:@"Tynda"];
     return [NSURL fileURLWithPath:path];
 }
@@ -580,6 +581,8 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 #pragma mark - App
 
+#include "UI.m"
+
 #pragma mark - The mark in the menu bar
 
 // The app icon in one colour: the speech bubble with the wave cut out of it.
@@ -754,7 +757,22 @@ static NSImage *BarsImage(NSColor *color) {
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     NSView *content = [NSView new];
     [content addSubview:stack];
-    _window.contentView = content;
+    NSVisualEffectView *base = [NSVisualEffectView new];
+    base.material = NSVisualEffectMaterialHUDWindow;
+    base.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    base.state = NSVisualEffectStateActive;
+    content.translatesAutoresizingMaskIntoConstraints = NO;
+    [base addSubview:content];
+    [NSLayoutConstraint activateConstraints:@[
+        [content.topAnchor constraintEqualToAnchor:base.topAnchor],
+        [content.bottomAnchor constraintEqualToAnchor:base.bottomAnchor],
+        [content.leadingAnchor constraintEqualToAnchor:base.leadingAnchor],
+        [content.trailingAnchor constraintEqualToAnchor:base.trailingAnchor],
+    ]];
+    _window.contentView = base;
+    _window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    _window.opaque = NO;
+    _window.backgroundColor = NSColor.clearColor;
     CGFloat inner = 520 - 64;
     [NSLayoutConstraint activateConstraints:@[
         [stack.topAnchor constraintEqualToAnchor:content.topAnchor],
@@ -871,7 +889,7 @@ static const CGKeyCode kKeyFn = 63, kKeyGlobe = 179, kKeyEsc = 53, kKeyV = 9;
 
 static BOOL DemoDictation(void) { return [NSProcessInfo.processInfo.arguments containsObject:@"--demo-dictation"]; }
 
-@interface AppDelegate : NSObject <NSApplicationDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, TyndaActions>
 - (CGEventRef)handleEvent:(CGEventRef)event type:(CGEventType)type;
 @end
 
@@ -913,6 +931,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSString *_lastText;
     NSMenuItem *_copyLastItem;
     Onboarding *_onboarding;
+    NSMenu *_menu;
+    TyndaPopover *_popover;
+    TyndaLibrary *_library;
+    NSTimer *_uiTimer;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
@@ -942,7 +964,18 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     [menu addItem:_accessItem];
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[[NSMenuItem alloc] initWithTitle:L(@"Quit", @"Выйти") action:@selector(terminate:) keyEquivalent:@"q"]];
-    _statusItem.menu = menu;
+    // A click opens the glass panel; a right click (or ctrl-click) opens the plain menu.
+    _menu = menu;
+    _statusItem.button.target = self;
+    _statusItem.button.action = @selector(statusClicked:);
+    [_statusItem.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
+    _popover = [[TyndaPopover alloc] initWithActions:self];
+    _library = [[TyndaLibrary alloc] initWithActions:self];
+    _uiTimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) {
+        [self->_popover refresh];
+        [self->_library refreshStatus];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:_uiTimer forMode:NSRunLoopCommonModes];
     [self refresh];
     [UNUserNotificationCenter.currentNotificationCenter
         requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
@@ -1042,7 +1075,18 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     // Watching fn and pasting need the Accessibility permission; the setup window walks through it.
     Log(@"dictation: accessibility trusted=%d, microphone=%d", AXIsProcessTrusted(), [Onboarding micGranted]);
     [self installEditMenu];
-    if ([Onboarding needed]) [self showOnboarding];
+    // `--show-library N` / `--show-popover`: open that surface at launch. Used to check the design.
+    NSArray<NSString *> *launchArgs = NSProcessInfo.processInfo.arguments;
+    if ([launchArgs containsObject:@"--show-library"]) {
+        NSUInteger at = [launchArgs indexOfObject:@"--show-library"];
+        [self showLibrary:at + 1 < launchArgs.count ? (LibrarySection)launchArgs[at + 1].integerValue : SecMeetings];
+    } else if ([launchArgs containsObject:@"--show-popover"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self->_popover toggleBelow:self->_statusItem.button];
+        });
+    } else if ([Onboarding needed]) {
+        [self showOnboarding];
+    }
     [self installTap];
     if (!_tap) {
         _tapTimer = [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *t) {
@@ -1308,6 +1352,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     [h seekToEndOfFile];
     [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
     [h closeFile];
+    [_library reloadIfVisible];
 }
 
 // Put the text on the clipboard, press ⌘V in the focused app, then give the clipboard back.
@@ -1356,6 +1401,26 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     [NSFileManager.defaultManager createDirectoryAtURL:NotesDir() withIntermediateDirectories:YES attributes:nil error:nil];
     [NSWorkspace.sharedWorkspace openURL:NotesDir()];
 }
+
+- (void)statusClicked:(id)sender {
+    NSEvent *e = NSApp.currentEvent;
+    if (e.type == NSEventTypeRightMouseUp || (e.modifierFlags & NSEventModifierFlagControl)) {
+        [_popover close];
+        _statusItem.menu = _menu;
+        [_statusItem.button performClick:nil];
+        _statusItem.menu = nil;
+        return;
+    }
+    [_popover toggleBelow:_statusItem.button];
+}
+
+- (BOOL)isRecordingMeeting { return _startedAt != nil; }
+- (NSDate *)meetingStartedAt { return _startedAt; }
+- (BOOL)isProcessingMeeting { return _processing > 0; }
+- (BOOL)engineReady { return _transcriber.ready; }
+- (BOOL)fnListening { return _tap != NULL; }
+- (void)showLibrary:(LibrarySection)section { [_library show:section]; }
+- (void)showLibraryMeeting:(NSString *)folder { [_library showMeeting:folder]; }
 
 - (void)toggle {
     if (_busy) return;
@@ -1496,8 +1561,9 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
             NSURL *noteURL = [dir URLByAppendingPathComponent:@"note.md"];
             NSURL *transcriptURL = [dir URLByAppendingPathComponent:@"transcript.md"];
             if (SelfTest()) { [NSApp terminate:nil]; return; }
-            if ([NSFileManager.defaultManager fileExistsAtPath:noteURL.path]) [NSWorkspace.sharedWorkspace openURL:noteURL];
-            else if ([NSFileManager.defaultManager fileExistsAtPath:transcriptURL.path]) [NSWorkspace.sharedWorkspace openURL:transcriptURL];
+            if ([NSFileManager.defaultManager fileExistsAtPath:noteURL.path] || [NSFileManager.defaultManager fileExistsAtPath:transcriptURL.path]) {
+                [self showLibraryMeeting:dir.lastPathComponent];
+            }
             [self notify:ok ? L(@"Note is ready", @"Конспект готов") : L(@"Something went wrong", @"Не всё получилось")
                     body:ok ? dir.lastPathComponent : L(@"See process.log in the recording's folder", @"Подробности в process.log в папке записи")];
         });
@@ -1534,7 +1600,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 // Opening Tynda again (from Applications, Spotlight, the Dock) brings up the setup window —
 // a way in even when the menu bar has no room to show the icon.
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
-    [self showOnboarding];
+    if ([Onboarding needed]) [self showOnboarding]; else [self showLibrary:SecMeetings];
     return YES;
 }
 

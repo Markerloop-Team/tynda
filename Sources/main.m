@@ -4,6 +4,7 @@
 // Objective-C on purpose: it builds with the plain Command Line Tools.
 
 #import <AVFoundation/AVFoundation.h>
+#import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #import <ServiceManagement/ServiceManagement.h>
@@ -121,11 +122,40 @@ static NSString *LanguageName(NSString *code) {
     return code;
 }
 
+// The languages of the keyboard layouts set up on this Mac: a person types in the languages they speak.
+static NSArray<NSString *> *KeyboardLanguages(void) {
+    static NSArray<NSString *> *found;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableOrderedSet<NSString *> *out = [NSMutableOrderedSet new];
+        NSDictionary *filter = @{(__bridge id)kTISPropertyInputSourceCategory: (__bridge id)kTISCategoryKeyboardInputSource,
+                                 (__bridge id)kTISPropertyInputSourceIsSelectCapable: @YES};
+        NSArray *sources = CFBridgingRelease(TISCreateInputSourceList((__bridge CFDictionaryRef)filter, false));
+        for (id source in sources) {
+            NSArray<NSString *> *langs = (__bridge NSArray *)TISGetInputSourceProperty((__bridge TISInputSourceRef)source, kTISPropertyInputSourceLanguages);
+            NSString *code = [langs.firstObject componentsSeparatedByString:@"-"].firstObject.lowercaseString;
+            if ([code isEqualToString:@"nb"] || [code isEqualToString:@"nn"]) code = @"no";
+            if (code && ![LanguageName(code) isEqualToString:code]) [out addObject:code];
+        }
+        found = out.array;
+    });
+    return found;
+}
+
+// Names and terms the user wants spelled their way. They are shown to the speech model as a hint.
+static NSArray<NSString *> *MyWords(void) {
+    NSMutableArray *ok = [NSMutableArray new];
+    for (id w in [NSUserDefaults.standardUserDefaults arrayForKey:@"words"]) if ([w isKindOfClass:NSString.class] && [w length]) [ok addObject:w];
+    return ok;
+}
+
 static NSArray<NSString *> *ChosenLanguages(void) {
     NSArray *saved = [NSUserDefaults.standardUserDefaults arrayForKey:@"languages"];
     NSMutableArray *ok = [NSMutableArray new];
     for (id code in saved) if ([code isKindOfClass:NSString.class] && ![LanguageName(code) isEqualToString:code]) [ok addObject:code];
-    return ok.count ? ok : @[@"en", @"ru", @"kk"];
+    if (ok.count) return ok;
+    NSArray<NSString *> *keyboard = KeyboardLanguages();  // until the user edits the list
+    return keyboard.count ? keyboard : @[@"en"];
 }
 
 #pragma mark - Dictation: microphone into memory, with a live level for the waveform
@@ -271,6 +301,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
     task.arguments = @[[ScriptsDir() URLByAppendingPathComponent:@"dictate_server.py"].path];
     NSMutableDictionary *env = [NSProcessInfo.processInfo.environment mutableCopy];
     env[@"TYNDA_LANGS"] = [ChosenLanguages() componentsJoinedByString:@","];
+    env[@"TYNDA_WORDS"] = [MyWords() componentsJoinedByString:@"\n"];
     task.environment = env;
     NSPipe *inPipe = [NSPipe pipe], *outPipe = [NSPipe pipe];
     task.standardInput = inPipe;
@@ -564,11 +595,17 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 #pragma mark - The mark in the menu bar
 
-// The app icon in one colour: the speech bubble with the wave cut out of it.
-// Without a colour it adapts to the menu bar. Four teeth instead of five — at 18 points five turn to mush.
-static NSImage *BarsImage(NSColor *color) {
+// The app icon in one colour, and what it says about the app at a glance:
+//   ready      the speech bubble with the wave cut out of it
+//   loading    the bubble with dots filling in — wait, nothing to do
+//   attention  the bubble with an exclamation mark — setup needs the user
+// One colour only, so it adapts to a light or dark menu bar like every other icon there.
+// Four teeth instead of the icon's five: at 18 points five turn to mush.
+typedef NS_ENUM(NSInteger, MarkKind) { MarkReady, MarkLoading, MarkAttention };
+
+static NSImage *MarkImage(MarkKind kind, NSInteger phase) {
     NSImage *img = [NSImage imageWithSize:NSMakeSize(22, 18) flipped:YES drawingHandler:^BOOL(NSRect r) {
-        [(color ?: NSColor.blackColor) set];
+        [NSColor.blackColor set];
         NSBezierPath *tail = [NSBezierPath bezierPath];
         [tail moveToPoint:NSMakePoint(5.6, 12.0)];
         [tail lineToPoint:NSMakePoint(4.7, 16.6)];
@@ -580,25 +617,35 @@ static NSImage *BarsImage(NSColor *color) {
         [tail stroke];
         [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(1, 1.2, 20, 12.6) xRadius:5.4 yRadius:5.4] fill];
 
-        static const CGFloat amps[4] = {3.0, 6.6, 7.0, 3.4};
-        const CGFloat step = 3.2, left = 11 - 4 * step / 2, mid = 7.5;
-        NSBezierPath *wave = [NSBezierPath bezierPath];
-        [wave moveToPoint:NSMakePoint(left, mid + amps[0] / 2)];
-        for (int i = 0; i < 4; i++) {
-            CGFloat x = left + (i + 1) * step;
-            [wave lineToPoint:NSMakePoint(x, mid - amps[i] / 2)];
-            if (i < 3) [wave lineToPoint:NSMakePoint(x, mid + amps[i + 1] / 2)];
-        }
-        wave.lineWidth = 1.3;
-        wave.lineJoinStyle = NSLineJoinStyleRound;
-        wave.lineCapStyle = NSLineCapStyleRound;
         CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
-        CGContextSetBlendMode(ctx, kCGBlendModeClear);  // cut the wave out of the bubble
-        [wave stroke];
+        CGContextSetBlendMode(ctx, kCGBlendModeClear);  // everything below is cut out of the bubble
+        const CGFloat mid = 7.5;
+        if (kind == MarkLoading) {
+            for (NSInteger i = 0; i <= phase % 3; i++) {
+                [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(6.1 + i * 3.9, mid - 1.3, 2.6, 2.6)] fill];
+            }
+        } else if (kind == MarkAttention) {
+            [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(10.1, 3.4, 1.8, 5.4) xRadius:0.9 yRadius:0.9] fill];
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(10.0, 9.8, 2.0, 2.0)] fill];
+        } else {
+            static const CGFloat amps[4] = {3.0, 6.6, 7.0, 3.4};
+            const CGFloat step = 3.2, left = 11 - 4 * step / 2;
+            NSBezierPath *wave = [NSBezierPath bezierPath];
+            [wave moveToPoint:NSMakePoint(left, mid + amps[0] / 2)];
+            for (int i = 0; i < 4; i++) {
+                CGFloat x = left + (i + 1) * step;
+                [wave lineToPoint:NSMakePoint(x, mid - amps[i] / 2)];
+                if (i < 3) [wave lineToPoint:NSMakePoint(x, mid + amps[i + 1] / 2)];
+            }
+            wave.lineWidth = 1.3;
+            wave.lineJoinStyle = NSLineJoinStyleRound;
+            wave.lineCapStyle = NSLineCapStyleRound;
+            [wave stroke];
+        }
         CGContextSetBlendMode(ctx, kCGBlendModeNormal);
         return YES;
     }];
-    img.template = color == nil;
+    img.template = YES;
     return img;
 }
 
@@ -739,6 +786,7 @@ static NSView *KeyCap(NSString *text) {
 
 @interface SetupRow : NSObject
 @property(nonatomic, strong) StatusDot *dot;
+@property(nonatomic, strong) NSProgressIndicator *spinner;  // shown instead of the dot while the step is working
 @property(nonatomic, strong) NSTextField *detail, *buttonLabel;
 @property(nonatomic, strong) Card *button;
 @end
@@ -760,7 +808,9 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
 
 @implementation Onboarding {
     NSWindow *_window;
-    SetupRow *_mic, *_access, *_fn, *_lang, *_engine;
+    SetupRow *_mic, *_access, *_fn, *_lang, *_words, *_engine;
+    NSWindow *_wordsSheet;
+    NSTextView *_wordsText;
     NSTextField *_tryLabel, *_tryField;
     NSSwitch *_login;
     NSTimer *_timer;
@@ -787,6 +837,11 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     Card *card = MakeCard(NSMakeRect(kSetupPad, y, w, kRowH), 18, Wh(0.08), Wh(0.14));
     row.dot = [[StatusDot alloc] initWithFrame:NSMakeRect(14, (kRowH - 28) / 2, 28, 28)];
     [card addSubview:row.dot];
+    row.spinner = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(18, (kRowH - 20) / 2, 20, 20)];
+    row.spinner.style = NSProgressIndicatorStyleSpinning;
+    row.spinner.controlSize = NSControlSizeSmall;
+    row.spinner.displayedWhenStopped = NO;
+    [card addSubview:row.spinner];
     NSTextField *t = Lbl(title, 14, NSFontWeightSemibold, NSColor.whiteColor);
     t.frame = NSMakeRect(54, 8, w - 54 - kButtonW - 28, 18);
     [card addSubview:t];
@@ -826,15 +881,16 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     Flip *root = [[Flip alloc] initWithFrame:NSMakeRect(0, 0, kSetupW, 100)];
 
     NSImageView *icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
-    icon.frame = NSMakeRect(kSetupPad - 9, 38, 86, 86);
+    icon.frame = NSMakeRect(kSetupPad - 7, 34, 64, 64);
     [root addSubview:icon];
     NSTextField *title = Lbl(L(@"Welcome to Tynda", @"Добро пожаловать в Tynda"), 28, NSFontWeightBold, NSColor.whiteColor);
-    title.frame = NSMakeRect(kSetupPad, 128, w, 36);
+    title.frame = NSMakeRect(kSetupPad + 64, 38, w - 64, 36);
     [root addSubview:title];
     NSTextField *sub = Lbl(L(@"Talk instead of typing. A few things to set up — it takes a minute.",
                              @"Говори вместо того, чтобы печатать. Настроить нужно несколько вещей — это минута."),
                            14, NSFontWeightRegular, Wh(0.62));
-    sub.frame = NSMakeRect(kSetupPad, 168, w, 20);
+    sub.font = [NSFont systemFontOfSize:13];
+    sub.frame = NSMakeRect(kSetupPad + 65, 74, w - 65, 18);
     [root addSubview:sub];
 
     NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"";
@@ -843,7 +899,7 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     versionLabel.frame = NSMakeRect(kSetupW - kSetupPad - 140, 16, 140, 14);
     [root addSubview:versionLabel];
 
-    y = 204;
+    y = 118;
     _mic = [self row:L(@"Microphone", @"Микрофон") action:@selector(micAction) at:y in:root];
     y += kRowH + kRowGap;
     _access = [self row:L(@"Accessibility", @"Универсальный доступ") action:@selector(accessAction) at:y in:root];
@@ -851,6 +907,8 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     _fn = [self row:L(@"Dictation key", @"Клавиша диктовки") action:@selector(keyAction) at:y in:root];
     y += kRowH + kRowGap;
     _lang = [self row:L(@"Languages", @"Языки") action:@selector(languagesAction) at:y in:root];
+    y += kRowH + kRowGap;
+    _words = [self row:L(@"My words", @"Мои слова") action:@selector(wordsAction) at:y in:root];
     y += kRowH + kRowGap;
     _engine = [self row:L(@"Speech model", @"Модель распознавания речи") action:@selector(engineAction) at:y in:root];
     y += kRowH + 18;
@@ -922,8 +980,14 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     _window.contentView = base;
 }
 
+- (void)mark:(SetupRow *)row state:(StepState)state {
+    row.dot.state = state;
+    row.dot.hidden = state == StepBusy;
+    if (state == StepBusy) [row.spinner startAnimation:nil]; else [row.spinner stopAnimation:nil];
+}
+
 - (void)set:(SetupRow *)row ok:(BOOL)ok busy:(BOOL)busy detail:(NSString *)detail button:(NSString *)button {
-    row.dot.state = ok ? StepDone : (busy ? StepBusy : StepTodo);
+    [self mark:row state:ok ? StepDone : (busy ? StepBusy : StepTodo)];
     row.detail.stringValue = detail;
     BOOL showButton = !ok && button != nil;
     row.button.hidden = !showButton;
@@ -955,7 +1019,7 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     else if (fnTaken) keyDetail = L(@"macOS uses fn for something else. Set “Press 🌐 key to” to “Do Nothing” in Keyboard settings, or pick another key.",
                                     @"macOS занимает fn другим действием. Поставь «Нажатие клавиши 🌐» → «Ничего не делать» в настройках клавиатуры или выбери другую клавишу.");
     else keyDetail = [NSString stringWithFormat:L(@"%@ — hold it and talk.", @"%@ — удерживай и говори."), HotkeyName()];
-    _fn.dot.state = _keyMonitor ? StepBusy : (fnTaken ? StepTodo : StepDone);
+    [self mark:_fn state:_keyMonitor ? StepBusy : (fnTaken ? StepTodo : StepDone)];
     _fn.detail.stringValue = keyDetail;
     _fn.button.hidden = NO;  // always there: the key can be changed at any time
     _fn.buttonLabel.stringValue = _keyMonitor ? L(@"Cancel", @"Отмена") : L(@"Change key", @"Сменить");
@@ -963,17 +1027,27 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
 
     NSMutableArray *names = [NSMutableArray new];
     for (NSString *code in ChosenLanguages()) [names addObject:LanguageName(code)];
-    _lang.dot.state = StepDone;
+    [self mark:_lang state:StepDone];
     _lang.detail.stringValue = [names componentsJoinedByString:@" · "];
     _lang.button.hidden = NO;
     _lang.buttonLabel.stringValue = L(@"Change", @"Изменить");
     _lang.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, kDetailH);
 
+    NSArray<NSString *> *words = MyWords();
+    [self mark:_words state:StepDone];
+    _words.detail.stringValue = words.count
+        ? [NSString stringWithFormat:@"%lu: %@", (unsigned long)words.count, [words componentsJoinedByString:@", "]]
+        : L(@"Names and terms to spell your way. None yet.", @"Имена и термины, которые нужно писать по-твоему. Пока пусто.");
+    _words.detail.maximumNumberOfLines = 1;
+    _words.button.hidden = NO;
+    _words.buttonLabel.stringValue = L(@"Edit", @"Изменить");
+    _words.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - kButtonW - 10, 18);
+
     BOOL installed = self.engineInstalled && self.engineInstalled();
     BOOL ready = self.engineReady && self.engineReady();
     [self set:_engine ok:ready busy:installed && !ready
        detail:ready ? L(@"Loaded. Runs on this Mac.", @"Загружена. Работает на этом Mac.")
-                    : (installed ? L(@"Loading, a few seconds…", @"Загружается, несколько секунд…")
+                    : (installed ? L(@"Loading into memory, a few seconds…", @"Загружается в память, несколько секунд…")
                                  : L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh."))
        button:nil];
 
@@ -1010,6 +1084,70 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     BOOL ok = _login.state == NSControlStateValueOn ? [SMAppService.mainAppService registerAndReturnError:&err]
                                                     : [SMAppService.mainAppService unregisterAndReturnError:&err];
     Log(@"setup: start at login → %@%@", _login.state == NSControlStateValueOn ? @"on" : @"off", ok ? @"" : [NSString stringWithFormat:@" failed: %@", err.localizedDescription]);
+    [self refresh];
+}
+
+// A sheet with one word or phrase per line.
+- (void)wordsAction {
+    CGFloat w = 440, h = 380;
+    _wordsSheet = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, w, h) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    _wordsSheet.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    _wordsSheet.releasedWhenClosed = NO;
+    Flip *root = [[Flip alloc] initWithFrame:NSMakeRect(0, 0, w, h)];
+    NSTextField *title = Lbl(L(@"My words", @"Мои слова"), 17, NSFontWeightBold, NSColor.labelColor);
+    title.frame = NSMakeRect(22, 20, w - 44, 22);
+    [root addSubview:title];
+    NSTextField *hint = WrapLbl(L(@"Names, brands and terms Tynda should spell the way you do — one per line, up to 100. They are a hint for the speech model on this Mac: it gets them right more often, not every time.",
+                                  @"Имена, названия и термины, которые Tynda должна писать по-твоему, — по одному в строке, до 100. Это подсказка для модели речи на этом Mac: она станет писать их правильно чаще, но не всегда."),
+                                12.5, NSFontWeightRegular, NSColor.secondaryLabelColor, 3);
+    hint.frame = NSMakeRect(22, 48, w - 44, 50);
+    [root addSubview:hint];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(22, 106, w - 44, h - 106 - 64)];
+    scroll.hasVerticalScroller = YES;
+    scroll.borderType = NSBezelBorder;
+    _wordsText = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, w - 44, h - 106 - 64)];
+    _wordsText.font = [NSFont systemFontOfSize:14];
+    _wordsText.autoresizingMask = NSViewWidthSizable;
+    _wordsText.richText = NO;
+    _wordsText.automaticSpellingCorrectionEnabled = NO;
+    _wordsText.automaticTextReplacementEnabled = NO;
+    _wordsText.continuousSpellCheckingEnabled = NO;
+    _wordsText.textContainerInset = NSMakeSize(6, 8);
+    _wordsText.string = [MyWords() componentsJoinedByString:@"\n"];
+    scroll.documentView = _wordsText;
+    [root addSubview:scroll];
+    NSButton *save = [NSButton buttonWithTitle:L(@"Save", @"Сохранить") target:self action:@selector(wordsSave)];
+    save.keyEquivalent = @"\r";
+    save.keyEquivalentModifierMask = NSEventModifierFlagCommand;  // plain Return adds a line in the list
+    save.frame = NSMakeRect(w - 22 - 100, h - 46, 100, 30);
+    [root addSubview:save];
+    NSButton *cancel = [NSButton buttonWithTitle:L(@"Cancel", @"Отмена") target:self action:@selector(wordsCancel)];
+    cancel.keyEquivalent = @"\e";
+    cancel.frame = NSMakeRect(w - 22 - 100 - 8 - 100, h - 46, 100, 30);
+    [root addSubview:cancel];
+    _wordsSheet.contentView = root;
+    [_window beginSheet:_wordsSheet completionHandler:nil];
+    [_wordsSheet makeFirstResponder:_wordsText];
+}
+
+- (void)wordsCancel {
+    [_window endSheet:_wordsSheet];
+    _wordsSheet = nil;
+}
+
+- (void)wordsSave {
+    NSMutableOrderedSet<NSString *> *words = [NSMutableOrderedSet new];
+    for (NSString *raw in [_wordsText.string componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\n,;"]]) {
+        NSString *w = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (w.length == 0) continue;
+        if (w.length > 40) w = [w substringToIndex:40];
+        [words addObject:w];
+        if (words.count == 100) break;
+    }
+    [NSUserDefaults.standardUserDefaults setObject:words.array forKey:@"words"];
+    Log(@"setup: %lu words in the list", (unsigned long)words.count);  // the count only, never the words
+    [self wordsCancel];
+    if (self.languagesChanged) self.languagesChanged();  // the engine reads the list when it starts
     [self refresh];
 }
 
@@ -1179,12 +1317,15 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSUInteger _wavCounter;
     NSString *_lastText;
     NSMenuItem *_copyLastItem;
+    NSTimer *_markTimer;
+    NSInteger _markPhase, _markShown;
     Onboarding *_onboarding;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
-    _statusItem.button.image = BarsImage(nil);
+    _statusItem.button.image = MarkImage(MarkLoading, 0);
+    _markShown = -1;  // nothing shown yet, so the first state always draws
     NSMenu *menu = [NSMenu new];
     _infoItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     _infoItem.enabled = NO;
@@ -1205,6 +1346,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     [menu addItem:[[NSMenuItem alloc] initWithTitle:L(@"Quit", @"Выйти") action:@selector(terminate:) keyEquivalent:@"q"]];
     _statusItem.menu = menu;
     [self setUpDictation];
+    _markTimer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { [self refreshDictationMenu]; }];
+    [NSRunLoop.mainRunLoop addTimer:_markTimer forMode:NSRunLoopCommonModes];
 }
 
 #pragma mark Dictation
@@ -1220,11 +1363,29 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     [self refreshDictationMenu];
 }
 
+// What stands between the user and dictation right now.
+- (MarkKind)markKind {
+    BOOL needsUser = ![Onboarding micGranted] || !AXIsProcessTrusted() || (gHotkey == kKeyFn && ![Onboarding fnFree]) || !PythonPath();
+    if (needsUser) return MarkAttention;
+    return (_tap && _transcriber.ready) ? MarkReady : MarkLoading;
+}
+
+// The menu bar icon and the first line of the menu say the same thing. Runs twice a second:
+// permissions can change behind the app's back, and the loading dots need to move.
 - (void)refreshDictationMenu {
+    MarkKind kind = [self markKind];
+    NSInteger shown = kind * 10 + (kind == MarkLoading ? ++_markPhase % 3 : 0) + ([self dictationEnabled] ? 0 : 100);
+    if (shown != _markShown) {
+        _markShown = shown;
+        _statusItem.button.image = MarkImage(kind, _markPhase);
+        _statusItem.button.appearsDisabled = kind == MarkReady && ![self dictationEnabled];
+    }
     _dictationItem.state = [self dictationEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
-    if (!_tap || !_transcriber.ready) _infoItem.title = L(@"Not ready yet — open Setup…", @"Ещё не готово — открой «Настройка…»");
+    if (kind == MarkAttention) _infoItem.title = L(@"Setup is not finished — open Setup…", @"Настройка не закончена — открой «Настройка…»");
+    else if (kind == MarkLoading) _infoItem.title = L(@"Loading the speech model…", @"Загружается модель речи…");
     else if (![self dictationEnabled]) _infoItem.title = L(@"Dictation is off", @"Диктовка выключена");
     else _infoItem.title = [NSString stringWithFormat:L(@"Hold %@ and speak", @"Удерживай %@ и говори"), HotkeyName()];
+    _statusItem.button.toolTip = [@"Tynda — " stringByAppendingString:_infoItem.title];
     _dictationItem.title = [NSString stringWithFormat:L(@"Dictation with %@", @"Диктовка по %@"), HotkeyName()];
     _dictationItem.toolTip = [NSString stringWithFormat:L(@"Hold %1$@ and speak — the text is typed where your cursor is. Double-tap %1$@ for hands-free, %1$@ again to stop, Esc to cancel. Change the key in Setup…",
                                                           @"Удерживай %1$@ и говори — текст вставится на месте курсора. Двойное нажатие %1$@ — запись без удержания, ещё раз %1$@ — стоп, Esc — отмена. Клавиша меняется в «Настройка…»"), HotkeyName()];

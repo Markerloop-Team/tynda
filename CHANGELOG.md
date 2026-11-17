@@ -6,6 +6,28 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-18
+
+### Added
+
+- **My words.** A list of names, brands and terms in the setup window, up to 100. The speech model is shown it
+  before every phrase and spells those words your way more often. It is a hint: it helps most with names in
+  the language they are written in, and it does not work every time.
+- **The menu bar icon shows the state.** The wave means ready; dots filling in mean the speech model is
+  loading; an exclamation mark means the setup needs you. The first line of the menu says the same in words.
+- **A real loading indicator** for the speech model in the setup window, instead of a still grey ring.
+
+### Changed
+
+- **Default languages come from your keyboard layouts** instead of a fixed English, Russian and Kazakh. If you
+  have already edited the list, it stays as it is.
+- The setup window is more compact: the icon sits beside the title, so six steps fit a 13-inch screen.
+
+### Fixed
+
+- After `./install.sh` the Mac showed Tynda twice in Spotlight and Launchpad: the build left a second copy in
+  the source folder. The installer now removes it.
+
 ## [0.1.1] — 2026-11-18
 
 ### Fixed
@@ -43,6 +65,7 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.0

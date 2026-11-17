@@ -21,13 +21,18 @@ Free to use, open source, MIT. Pull requests are welcome — see [Contributing](
 
 A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, and the defaults work from the first sentence.
 
-Tynda listens for English, Russian and Kazakh out of the box. Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak.
+Tynda starts with the languages of the keyboard layouts on your Mac. Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak.
+
+**Your words.** Names, brands and terms can go into *My words* in the setup window. The speech model is shown the list before every phrase and spells those words your way more often — a hint, so not every time. Up to 100.
+
+**The icon tells you where things stand.** The wave means ready, dots filling in mean the model is loading, an exclamation mark means the setup needs you.
 
 ## Nothing is saved, nothing leaves your Mac
 
 - Your voice is recognised on your Mac by [Whisper large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) running through Apple's [MLX](https://github.com/ml-explore/mlx). Once the model is downloaded, Tynda works with the network off.
 - The audio lives for a second in a temporary file and is deleted as soon as it becomes text.
 - The text is typed into your app and is not written anywhere else. There is no history.
+- Your settings — the key, the languages and the *My words* list — stay in the app's preferences on your Mac.
 - No account, no telemetry, no server.
 
 ## Requirements
@@ -56,8 +61,9 @@ When it finishes, a setup window opens and walks you through the rest, with a li
 1. **Microphone** — to hear you.
 2. **Accessibility** — to notice the fn key and to type the text for you.
 3. **Dictation key** — fn has to be free ("Do Nothing" in Keyboard settings), or pick another key right there.
-4. **Languages** — English, Russian and Kazakh to begin with; change the list any time.
-5. **Speech model** — loads in a few seconds.
+4. **Languages** — taken from your keyboard layouts to begin with; change the list any time.
+5. **My words** — optional: names and terms to spell your way.
+6. **Speech model** — loads in a few seconds.
 
 Then it gives you a text field to try your first dictation in. You can open this window again any time: Tynda icon in the menu bar → *Setup…*, or just open Tynda again from Applications.
 

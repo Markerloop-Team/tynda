@@ -1,49 +1,68 @@
-// Draws the Tynda mark — five bars of a voice waveform — and writes every image the
+// Draws the Tynda icon — a voice wave inside a speech bubble — and writes every image the
 // project needs. Run it with tools/make_icon.sh after changing the design.
 //
 //   make_icon <iconset dir> <docs dir>
+//
+// All coordinates below are on a 1024×1024 canvas with the origin at the top left.
 
 #import <Cocoa/Cocoa.h>
-
-static const CGFloat kHeights[5] = {0.30, 0.62, 1.00, 0.48, 0.22};  // the waveform, tallest in the middle
 
 static NSColor *RGB(int hex) {
     return [NSColor colorWithSRGBRed:((hex >> 16) & 255) / 255.0 green:((hex >> 8) & 255) / 255.0 blue:(hex & 255) / 255.0 alpha:1];
 }
 
-// Bars centred in `box`; the tallest one fills the box height.
-static void DrawBars(NSRect box, NSColor *color, NSColor *accent) {
-    CGFloat slot = box.size.width / 5, barW = slot * 0.56;
+// The wave: a sawtooth (up-stroke, straight drop, up-stroke…) whose teeth grow and fade like a spoken word.
+static NSBezierPath *Wave(CGFloat cx, CGFloat cy, CGFloat scale) {
+    static const CGFloat amps[5] = {95, 210, 300, 170, 80};
+    const CGFloat step = 112.8, width = 5 * step;
+    NSBezierPath *p = [NSBezierPath bezierPath];
+    [p moveToPoint:NSMakePoint(cx - width / 2 * scale, cy + amps[0] / 2 * scale)];
     for (int i = 0; i < 5; i++) {
-        CGFloat h = MAX(barW, box.size.height * kHeights[i]);
-        NSRect r = NSMakeRect(box.origin.x + slot * i + (slot - barW) / 2, NSMidY(box) - h / 2, barW, h);
-        [(i == 2 && accent ? accent : color) setFill];
-        [[NSBezierPath bezierPathWithRoundedRect:r xRadius:barW / 2 yRadius:barW / 2] fill];
+        CGFloat x = cx + ((i + 1) * step - width / 2) * scale;
+        [p lineToPoint:NSMakePoint(x, cy - amps[i] / 2 * scale)];
+        if (i < 4) [p lineToPoint:NSMakePoint(x, cy + amps[i + 1] / 2 * scale)];
     }
+    p.lineWidth = 60 * scale;
+    p.lineJoinStyle = NSLineJoinStyleRound;
+    p.lineCapStyle = NSLineCapStyleButt;
+    return p;
 }
 
-static void WritePNG(NSString *path, int px, void (^draw)(CGFloat size)) {
+static void DrawIcon(CGFloat s) {
+    NSAffineTransform *t = [NSAffineTransform transform];  // 1024-canvas, y down → pixels, y up
+    [t translateXBy:0 yBy:s];
+    [t scaleXBy:s / 1024 yBy:-s / 1024];
+    [t concat];
+
+    [RGB(0xE5332A) setFill];  // red plate on Apple's icon grid
+    [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(100, 100, 824, 824) xRadius:184 yRadius:184] fill];
+
+    NSColor *black = RGB(0x0B0B0C);
+    [black setFill];
+    [black setStroke];
+    NSBezierPath *tail = [NSBezierPath bezierPath];  // the bubble's tail, with softened corners
+    [tail moveToPoint:NSMakePoint(326, 646)];
+    [tail lineToPoint:NSMakePoint(294, 798)];
+    [tail lineToPoint:NSMakePoint(476, 656)];
+    [tail closePath];
+    tail.lineWidth = 36;
+    tail.lineJoinStyle = NSLineJoinStyleRound;
+    [tail fill];
+    [tail stroke];
+    [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(176, 262, 672, 424) xRadius:170 yRadius:170] fill];
+
+    [NSColor.whiteColor setStroke];
+    [Wave(512, 474, 0.80) stroke];
+}
+
+static void WritePNG(NSString *path, int px) {
     NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:px pixelsHigh:px
         bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
-    NSGraphicsContext *ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
     [NSGraphicsContext saveGraphicsState];
-    NSGraphicsContext.currentContext = ctx;
-    draw(px);
+    NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
+    DrawIcon(px);
     [NSGraphicsContext restoreGraphicsState];
     [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
-}
-
-// The app icon: a near-black rounded square on Apple's icon grid, cream bars, one brass.
-static void DrawAppIcon(CGFloat s) {
-    CGFloat inset = s * 100 / 1024, side = s - inset * 2, radius = side * 0.2237;
-    NSRect plate = NSMakeRect(inset, inset, side, side);
-    NSBezierPath *shape = [NSBezierPath bezierPathWithRoundedRect:plate xRadius:radius yRadius:radius];
-    NSGradient *bg = [[NSGradient alloc] initWithStartingColor:RGB(0x232326) endingColor:RGB(0x09090a)];
-    [bg drawInBezierPath:shape angle:-90];
-    [[NSColor colorWithWhite:1 alpha:0.10] setStroke];
-    shape.lineWidth = MAX(1, s / 512);
-    [shape stroke];
-    DrawBars(NSInsetRect(plate, side * 0.20, side * 0.25), RGB(0xf4f1ea), RGB(0xd9a441));
 }
 
 int main(int argc, const char *argv[]) {
@@ -53,11 +72,11 @@ int main(int argc, const char *argv[]) {
         int sizes[] = {16, 32, 128, 256, 512};
         for (int i = 0; i < 5; i++) {
             int n = sizes[i];
-            WritePNG([iconset stringByAppendingFormat:@"/icon_%dx%d.png", n, n], n, ^(CGFloat s) { DrawAppIcon(s); });
-            WritePNG([iconset stringByAppendingFormat:@"/icon_%dx%d@2x.png", n, n], n * 2, ^(CGFloat s) { DrawAppIcon(s); });
+            WritePNG([iconset stringByAppendingFormat:@"/icon_%dx%d.png", n, n], n);
+            WritePNG([iconset stringByAppendingFormat:@"/icon_%dx%d@2x.png", n, n], n * 2);
         }
-        WritePNG([docs stringByAppendingString:@"/icon.png"], 512, ^(CGFloat s) { DrawAppIcon(s); });
-        WritePNG([docs stringByAppendingString:@"/favicon.png"], 64, ^(CGFloat s) { DrawAppIcon(s); });
+        WritePNG([docs stringByAppendingString:@"/icon.png"], 512);
+        WritePNG([docs stringByAppendingString:@"/favicon.png"], 64);
     }
     return 0;
 }

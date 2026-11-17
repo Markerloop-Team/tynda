@@ -70,7 +70,7 @@ cp -R Tynda.app "$DEST/Tynda.app"
 tccutil reset Accessibility app.tynda.mac >/dev/null 2>&1 || true
 open "$DEST/Tynda.app"
 
-print -P "\n%BTynda is running — its icon (five small bars) is in the menu bar.%b"
+print -P "\n%BTynda is running — its icon (a small wave) is in the menu bar.%b"
 cat <<EOF
 
 A setup window has opened. It walks you through the last steps:

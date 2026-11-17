@@ -582,17 +582,23 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 #pragma mark - The mark in the menu bar
 
-// Five bars of a waveform — the same mark as the app icon. Without a colour it adapts to the menu bar.
+// The wave from the app icon. Without a colour it adapts to the menu bar.
 static NSImage *BarsImage(NSColor *color) {
-    NSImage *img = [NSImage imageWithSize:NSMakeSize(18, 18) flipped:NO drawingHandler:^BOOL(NSRect r) {
-        static const CGFloat heights[5] = {0.30, 0.62, 1.00, 0.48, 0.22};
-        CGFloat barW = 2, gap = 1.6, total = 5 * barW + 4 * gap, x = (r.size.width - total) / 2, maxH = 14;
-        [(color ?: NSColor.blackColor) setFill];
+    NSImage *img = [NSImage imageWithSize:NSMakeSize(24, 18) flipped:YES drawingHandler:^BOOL(NSRect r) {
+        static const CGFloat amps[5] = {4.4, 9.4, 13.4, 7.6, 3.8};
+        const CGFloat step = 4.2, left = (r.size.width - 5 * step) / 2, mid = r.size.height / 2;
+        NSBezierPath *p = [NSBezierPath bezierPath];
+        [p moveToPoint:NSMakePoint(left, mid + amps[0] / 2)];
         for (int i = 0; i < 5; i++) {
-            CGFloat h = MAX(barW, maxH * heights[i]);
-            [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x, (r.size.height - h) / 2, barW, h) xRadius:1 yRadius:1] fill];
-            x += barW + gap;
+            CGFloat x = left + (i + 1) * step;
+            [p lineToPoint:NSMakePoint(x, mid - amps[i] / 2)];
+            if (i < 4) [p lineToPoint:NSMakePoint(x, mid + amps[i + 1] / 2)];
         }
+        p.lineWidth = 1.25;
+        p.lineJoinStyle = NSLineJoinStyleRound;
+        p.lineCapStyle = NSLineCapStyleRound;
+        [(color ?: NSColor.blackColor) setStroke];
+        [p stroke];
         return YES;
     }];
     img.template = color == nil;
@@ -1508,6 +1514,13 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     a.messageText = title;
     a.informativeText = text;
     [a runModal];
+}
+
+// Opening Tynda again (from Applications, Spotlight, the Dock) brings up the setup window —
+// a way in even when the menu bar has no room to show the icon.
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
+    [self showOnboarding];
+    return YES;
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {

@@ -582,23 +582,38 @@ typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTr
 
 #pragma mark - The mark in the menu bar
 
-// The wave from the app icon. Without a colour it adapts to the menu bar.
+// The app icon in one colour: the speech bubble with the wave cut out of it.
+// Without a colour it adapts to the menu bar. Four teeth instead of five — at 18 points five turn to mush.
 static NSImage *BarsImage(NSColor *color) {
-    NSImage *img = [NSImage imageWithSize:NSMakeSize(24, 18) flipped:YES drawingHandler:^BOOL(NSRect r) {
-        static const CGFloat amps[5] = {4.4, 9.4, 13.4, 7.6, 3.8};
-        const CGFloat step = 4.2, left = (r.size.width - 5 * step) / 2, mid = r.size.height / 2;
-        NSBezierPath *p = [NSBezierPath bezierPath];
-        [p moveToPoint:NSMakePoint(left, mid + amps[0] / 2)];
-        for (int i = 0; i < 5; i++) {
+    NSImage *img = [NSImage imageWithSize:NSMakeSize(22, 18) flipped:YES drawingHandler:^BOOL(NSRect r) {
+        [(color ?: NSColor.blackColor) set];
+        NSBezierPath *tail = [NSBezierPath bezierPath];
+        [tail moveToPoint:NSMakePoint(5.6, 12.0)];
+        [tail lineToPoint:NSMakePoint(4.7, 16.6)];
+        [tail lineToPoint:NSMakePoint(10.4, 12.6)];
+        [tail closePath];
+        tail.lineWidth = 1.0;
+        tail.lineJoinStyle = NSLineJoinStyleRound;
+        [tail fill];
+        [tail stroke];
+        [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(1, 1.2, 20, 12.6) xRadius:5.4 yRadius:5.4] fill];
+
+        static const CGFloat amps[4] = {3.0, 6.6, 7.0, 3.4};
+        const CGFloat step = 3.2, left = 11 - 4 * step / 2, mid = 7.5;
+        NSBezierPath *wave = [NSBezierPath bezierPath];
+        [wave moveToPoint:NSMakePoint(left, mid + amps[0] / 2)];
+        for (int i = 0; i < 4; i++) {
             CGFloat x = left + (i + 1) * step;
-            [p lineToPoint:NSMakePoint(x, mid - amps[i] / 2)];
-            if (i < 4) [p lineToPoint:NSMakePoint(x, mid + amps[i + 1] / 2)];
+            [wave lineToPoint:NSMakePoint(x, mid - amps[i] / 2)];
+            if (i < 3) [wave lineToPoint:NSMakePoint(x, mid + amps[i + 1] / 2)];
         }
-        p.lineWidth = 1.25;
-        p.lineJoinStyle = NSLineJoinStyleRound;
-        p.lineCapStyle = NSLineCapStyleRound;
-        [(color ?: NSColor.blackColor) setStroke];
-        [p stroke];
+        wave.lineWidth = 1.3;
+        wave.lineJoinStyle = NSLineJoinStyleRound;
+        wave.lineCapStyle = NSLineCapStyleRound;
+        CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
+        CGContextSetBlendMode(ctx, kCGBlendModeClear);  // cut the wave out of the bubble
+        [wave stroke];
+        CGContextSetBlendMode(ctx, kCGBlendModeNormal);
         return YES;
     }];
     img.template = color == nil;

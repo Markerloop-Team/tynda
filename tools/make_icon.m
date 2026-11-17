@@ -11,22 +11,13 @@ static NSColor *RGB(int hex) {
     return [NSColor colorWithSRGBRed:((hex >> 16) & 255) / 255.0 green:((hex >> 8) & 255) / 255.0 blue:(hex & 255) / 255.0 alpha:1];
 }
 
-// The wave: a sawtooth (up-stroke, straight drop, up-stroke…) whose teeth grow and fade like a spoken word.
-static NSBezierPath *Wave(CGFloat cx, CGFloat cy, CGFloat scale) {
-    static const CGFloat amps[5] = {95, 210, 300, 170, 80};
-    const CGFloat step = 112.8, width = 5 * step;
-    NSBezierPath *p = [NSBezierPath bezierPath];
-    [p moveToPoint:NSMakePoint(cx - width / 2 * scale, cy + amps[0] / 2 * scale)];
-    for (int i = 0; i < 5; i++) {
-        CGFloat x = cx + ((i + 1) * step - width / 2) * scale;
-        [p lineToPoint:NSMakePoint(x, cy - amps[i] / 2 * scale)];
-        if (i < 4) [p lineToPoint:NSMakePoint(x, cy + amps[i + 1] / 2 * scale)];
-    }
-    p.lineWidth = 60 * scale;
-    p.lineJoinStyle = NSLineJoinStyleRound;
-    p.lineCapStyle = NSLineCapStyleButt;
-    return p;
-}
+// The mark is defined once, on the 22×18 grid of the menu bar image in Sources/main.m:
+// a bubble 20×12.6 with radius 5.4, a tail at the lower left, and a four-tooth wave cut through it.
+// Here the same grid is blown up to the icon plate, so the icon and the menu bar mark have one shape.
+static const CGFloat kUnit = 33.6;                 // one grid point on the 1024 canvas (bubble = 672 wide)
+static const CGFloat kOriginX = 512 - 11 * kUnit;  // grid x 11 is the middle of the bubble
+static const CGFloat kOriginY = 512 - 9.15 * kUnit; // grid y 9.15 is the middle of bubble + tail
+static NSPoint G(CGFloat x, CGFloat y) { return NSMakePoint(kOriginX + x * kUnit, kOriginY + y * kUnit); }
 
 static void DrawIcon(CGFloat s) {
     NSAffineTransform *t = [NSAffineTransform transform];  // 1024-canvas, y down → pixels, y up
@@ -40,19 +31,32 @@ static void DrawIcon(CGFloat s) {
     NSColor *black = RGB(0x0B0B0C);
     [black setFill];
     [black setStroke];
-    NSBezierPath *tail = [NSBezierPath bezierPath];  // the bubble's tail, with softened corners
-    [tail moveToPoint:NSMakePoint(326, 646)];
-    [tail lineToPoint:NSMakePoint(294, 798)];
-    [tail lineToPoint:NSMakePoint(476, 656)];
+    NSBezierPath *tail = [NSBezierPath bezierPath];
+    [tail moveToPoint:G(5.6, 12.0)];
+    [tail lineToPoint:G(4.7, 16.6)];
+    [tail lineToPoint:G(10.4, 12.6)];
     [tail closePath];
-    tail.lineWidth = 36;
+    tail.lineWidth = 1.0 * kUnit;
     tail.lineJoinStyle = NSLineJoinStyleRound;
     [tail fill];
     [tail stroke];
-    [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(176, 262, 672, 424) xRadius:170 yRadius:170] fill];
+    NSPoint o = G(1, 1.2);
+    [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(o.x, o.y, 20 * kUnit, 12.6 * kUnit) xRadius:5.4 * kUnit yRadius:5.4 * kUnit] fill];
 
+    static const CGFloat amps[4] = {3.0, 6.6, 7.0, 3.4};
+    const CGFloat step = 3.2, left = 11 - 4 * step / 2, mid = 7.5;
+    NSBezierPath *wave = [NSBezierPath bezierPath];
+    [wave moveToPoint:G(left, mid + amps[0] / 2)];
+    for (int i = 0; i < 4; i++) {
+        CGFloat x = left + (i + 1) * step;
+        [wave lineToPoint:G(x, mid - amps[i] / 2)];
+        if (i < 3) [wave lineToPoint:G(x, mid + amps[i + 1] / 2)];
+    }
+    wave.lineWidth = 1.3 * kUnit;
+    wave.lineJoinStyle = NSLineJoinStyleRound;
+    wave.lineCapStyle = NSLineCapStyleRound;
     [NSColor.whiteColor setStroke];
-    [Wave(512, 474, 0.80) stroke];
+    [wave stroke];
 }
 
 static void WritePNG(NSString *path, int px) {

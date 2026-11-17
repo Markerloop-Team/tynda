@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jaz — hold fn, speak, it types</title>
+<meta name="description" content="Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.">
+<meta property="og:title" content="Jaz — hold fn, speak, it types">
+<meta property="og:description" content="Free, open-source voice dictation and meeting notes for the Mac. Speech is recognised on your own machine.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%230b0b0c'/%3E%3Cg fill='%23f4f1ea'%3E%3Crect x='7' y='13' width='3' height='6' rx='1.5'/%3E%3Crect x='12' y='8' width='3' height='16' rx='1.5'/%3E%3Crect x='17' y='11' width='3' height='10' rx='1.5'/%3E%3Crect x='22' y='14' width='3' height='4' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0b0c;
+    --panel: #151517;
+    --line: #26262a;
+    --ink: #f4f1ea;
+    --dim: #a09c93;
+    --faint: #6b6861;
+    --brass: #d9a441;
+    --red: #ff453a;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--ink); text-decoration-color: var(--faint); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--brass); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .mark { font: 600 22px/1 var(--serif); letter-spacing: .01em; text-decoration: none; }
+  .mark span { color: var(--brass); }
+  nav { display: flex; gap: 22px; font-size: 15px; }
+  nav a { color: var(--dim); text-decoration: none; }
+  nav a:hover { color: var(--ink); }
+
+  .hero { padding: 56px 0 40px; text-align: center; }
+  .alpha {
+    display: inline-block; font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    color: var(--brass); border: 1px solid #5a4620; border-radius: 99px; padding: 7px 12px; margin-bottom: 28px;
+  }
+  h1 {
+    font: 500 clamp(44px, 8.4vw, 92px)/1.02 var(--serif); letter-spacing: -.02em; margin: 0 0 22px;
+    text-wrap: balance;
+  }
+  h1 em { font-style: italic; color: var(--brass); }
+  .lede { max-width: 620px; margin: 0 auto 34px; color: var(--dim); font-size: 19px; text-wrap: pretty; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 13px 22px; border-radius: 99px; text-decoration: none;
+    font-weight: 600; font-size: 16px; border: 1px solid var(--line);
+  }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .btn.primary:hover { background: #fff; }
+  .btn:hover { border-color: var(--faint); }
+
+  /* ---------- the demo: a fake screen with the island ---------- */
+  .stage {
+    margin: 56px auto 0; max-width: 820px; border: 1px solid var(--line); border-radius: 18px;
+    background: linear-gradient(#131315, #0e0e10); overflow: hidden; text-align: left;
+  }
+  .bar { height: 30px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 7px; padding: 0 14px; }
+  .bar i { width: 10px; height: 10px; border-radius: 50%; background: #2c2c30; }
+  .screen { position: relative; padding: 74px 28px 34px; min-height: 250px; }
+  .island {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%) scale(.9);
+    height: 38px; min-width: 96px; padding: 0 16px; border-radius: 19px;
+    background: #000; border: 1px solid rgba(255,255,255,.16);
+    display: flex; align-items: center; gap: 10px; opacity: 0;
+    transition: opacity .16s, transform .16s, width .2s; box-shadow: 0 10px 30px rgba(0,0,0,.55);
+    white-space: nowrap;
+  }
+  .island.on { opacity: 1; transform: translateX(-50%) scale(1); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .wave { display: flex; align-items: center; gap: 2.5px; height: 22px; }
+  .wave b { width: 3px; border-radius: 2px; background: #fff; height: 3px; transition: height .09s; }
+  .hint { font: 500 12px/1 var(--sans); color: rgba(255,255,255,.55); }
+  .dots { display: none; gap: 5px; margin: 0 auto; }
+  .dots b { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: breathe 1s infinite; }
+  .dots b:nth-child(2) { animation-delay: .15s; } .dots b:nth-child(3) { animation-delay: .3s; }
+  @keyframes breathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+  .island.thinking .dot, .island.thinking .wave, .island.thinking .hint { display: none; }
+  .island.thinking .dots { display: flex; }
+  .island:not(.locked) .hint { display: none; }
+
+  .field {
+    border: 1px solid var(--line); border-radius: 12px; background: #0a0a0b; padding: 16px 18px;
+    min-height: 92px; font-size: 17px; color: var(--ink);
+  }
+  .field .who { display: block; font: 500 12px/1 var(--mono); color: var(--faint); margin-bottom: 10px; letter-spacing: .04em; }
+  .caret { display: inline-block; width: 2px; height: 1.15em; background: var(--brass); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .keys { display: flex; align-items: center; gap: 10px; margin-top: 18px; color: var(--dim); font-size: 14px; min-height: 34px; }
+  kbd {
+    font: 600 13px/1 var(--mono); padding: 8px 11px; border-radius: 8px; border: 1px solid #3a3a3f;
+    border-bottom-width: 3px; background: #1b1b1e; color: var(--ink); transition: transform .08s, background .08s, border-color .08s;
+  }
+  kbd.down { transform: translateY(2px); border-bottom-width: 1px; background: #2a2416; border-color: var(--brass); }
+
+  section { padding: 84px 0 0; }
+  h2 { font: 500 clamp(30px, 4.6vw, 44px)/1.1 var(--serif); letter-spacing: -.01em; margin: 0 0 12px; text-wrap: balance; }
+  .sub { color: var(--dim); max-width: 640px; margin: 0 0 34px; text-wrap: pretty; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 24px; }
+  .card h3 { font: 600 18px/1.3 var(--sans); margin: 14px 0 8px; }
+  .card p { margin: 0; color: var(--dim); font-size: 16px; }
+  .card .k { display: flex; gap: 6px; align-items: center; height: 34px; color: var(--faint); font-size: 13px; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .transcript { font: 15px/1.7 var(--sans); color: var(--dim); }
+  .transcript b { color: var(--ink); font-weight: 600; }
+  .transcript span { color: var(--faint); font: 12px var(--mono); }
+  ul.plain { list-style: none; padding: 0; margin: 0; }
+  ul.plain li { padding: 10px 0 10px 26px; border-top: 1px solid var(--line); position: relative; color: var(--dim); font-size: 16px; }
+  ul.plain li:first-child { border-top: 0; }
+  ul.plain li::before { content: ""; position: absolute; left: 4px; top: 20px; width: 8px; height: 8px; border-radius: 50%; background: var(--brass); }
+  ul.plain li b { color: var(--ink); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  td { padding: 14px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td:first-child { color: var(--faint); width: 150px; font: 13px/1.9 var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+  td:last-child { color: var(--dim); }
+  td b { color: var(--ink); font-weight: 600; }
+
+  pre {
+    margin: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 14px; background: #0a0a0b;
+    font: 15px/1.8 var(--mono); color: var(--ink); overflow-x: auto;
+  }
+  pre .c { color: var(--faint); }
+  .steps { counter-reset: s; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
+  .steps div { border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; color: var(--dim); font-size: 15px; }
+  .steps div::before { counter-increment: s; content: counter(s); display: block; font: 500 26px/1 var(--serif); color: var(--brass); margin-bottom: 10px; }
+  .steps b { color: var(--ink); display: block; font-size: 16px; margin-bottom: 4px; }
+
+  .honest { border: 1px solid #5a4620; background: #14110a; border-radius: 16px; padding: 26px 28px; }
+  .honest h2 { font-size: 28px; }
+  .honest p { color: var(--dim); margin: 0 0 10px; max-width: 760px; }
+
+  footer { margin-top: 90px; border-top: 1px solid var(--line); padding: 28px 0 44px; color: var(--faint); font-size: 14px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer a { color: var(--dim); }
+
+  @media (max-width: 800px) {
+    .grid, .two, .steps { grid-template-columns: 1fr; }
+    nav a.hide { display: none; }
+    .hero { padding-top: 34px; }
+    .screen { padding: 70px 16px 24px; }
+    td:first-child { width: 104px; }
+    section { padding-top: 64px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <a class="mark" href="#">Jaz<span>.</span></a>
+    <nav>
+      <a class="hide" href="#how">How it works</a>
+      <a class="hide" href="#meetings">Meetings</a>
+      <a class="hide" href="#needs">Requirements</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/toleberdyyeva/jaz">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <div class="alpha">Early alpha · free · open source</div>
+    <h1>Hold <em>fn</em>. Speak.<br>It types.</h1>
+    <p class="lede">Jaz is voice dictation and meeting notes for the Mac. Your speech is recognised on your own machine and typed wherever your cursor is.</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install from source</a>
+      <a class="btn" href="https://github.com/toleberdyyeva/jaz">View on GitHub</a>
+    </div>
+
+    <div class="stage" aria-label="Demonstration of dictation">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="screen">
+        <div class="island" id="island">
+          <span class="dot"></span>
+          <span class="wave" id="wave"></span>
+          <span class="hint">fn — stop · esc — cancel</span>
+          <span class="dots"><b></b><b></b><b></b></span>
+        </div>
+        <div class="field"><span class="who">MESSAGE</span><span id="typed"></span><span class="caret"></span></div>
+        <div class="keys"><kbd id="fn">fn</kbd><span id="caption">Hold fn and talk</span></div>
+      </div>
+    </div>
+  </div>
+
+  <section id="how">
+    <h2>Three gestures, nothing to learn</h2>
+    <p class="sub">A small black island appears at the top of the screen while Jaz listens, with a live waveform of your voice. It never takes focus away from what you are typing in.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="k"><kbd>fn</kbd> held</div>
+        <h3>Hold to talk</h3>
+        <p>Hold fn, say the sentence, let go. About a second later the text is where your cursor was — a chat, an email, a terminal, a search box.</p>
+      </div>
+      <div class="card">
+        <div class="k"><kbd>fn</kbd><kbd>fn</kbd></div>
+        <h3>Double-tap for hands-free</h3>
+        <p>Tap fn twice and take your hand away. Talk for a minute or ten. Press fn once more and the whole thing is typed.</p>
+      </div>
+      <div class="card">
+        <div class="k"><kbd>esc</kbd></div>
+        <h3>Changed your mind</h3>
+        <p>Esc throws the recording away. Nothing is typed. If something landed in the wrong place, the last phrases are kept in a local history file.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="private">
+    <div class="two">
+      <div>
+        <h2>Your voice stays on your Mac</h2>
+        <p class="sub">Speech recognition is Whisper large-v3-turbo running locally through Apple's MLX. Once the model is downloaded, dictation works with the network cable pulled out.</p>
+      </div>
+      <div class="card">
+        <ul class="plain">
+          <li><b>No account.</b> Nothing to sign up for.</li>
+          <li><b>No server.</b> There is no Jaz cloud for audio to go to.</li>
+          <li><b>No telemetry.</b> The only log is a text file on your disk.</li>
+          <li><b>One exception, your choice.</b> Meeting summaries send the transcript text to the LLM you point Jaz at. Skip it and you still get the transcript.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="meetings">
+    <div class="two">
+      <div class="card transcript">
+        <p><b>Me</b> <span>00:00</span><br>Let's ship the new site on Friday the twentieth.</p>
+        <p><b>Them</b> <span>00:09</span><br>Friday doesn't work, payments aren't ready. Tuesday instead. I'll finish payments by Monday, you check the mobile version.</p>
+        <p style="margin-bottom:0"><b>Action items</b><br>Them — finish payments — by Monday<br>Me — check the mobile version</p>
+      </div>
+      <div>
+        <h2>Meetings, without a bot in the call</h2>
+        <p class="sub">Click ◉ in the menu bar and record. Jaz captures your microphone and the computer's sound as two separate tracks, so it knows who is you and who is them — in Meet, Zoom, a phone call on speaker, anything that makes sound.</p>
+        <p class="sub" style="margin-bottom:0">When you stop, you get a transcript and a short written summary with decisions and action items, as plain Markdown files in a folder you own.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="needs">
+    <h2>Will it run on your Mac?</h2>
+    <p class="sub">Jaz is not for every computer. Check this before you spend time on the install.</p>
+    <table>
+      <tr><td>Mac</td><td><b>Apple silicon</b> — M1 or newer. Intel Macs are not supported: the speech model does not run on them.</td></tr>
+      <tr><td>macOS</td><td><b>14 Sonoma or newer.</b></td></tr>
+      <tr><td>Memory</td><td><b>8 GB minimum, 16 GB recommended.</b> The model stays loaded and takes about 2 GB.</td></tr>
+      <tr><td>Disk</td><td><b>About 3 GB</b> for the model and its Python packages.</td></tr>
+      <tr><td>Keyboard</td><td>The <b>fn / 🌐 key</b> set to "Do Nothing" in System Settings → Keyboard.</td></tr>
+      <tr><td>Languages</td><td>Russian, English and Kazakh out of the box, detected per phrase. Others are a two-line change.</td></tr>
+      <tr><td>Not yet</td><td>Windows, Linux, iPhone.</td></tr>
+    </table>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <p class="sub">There is no signed download yet, so Jaz is installed from source. You need the Xcode Command Line Tools and Homebrew. The script does the rest and tells you what it is doing.</p>
+<pre>git clone https://github.com/toleberdyyeva/jaz.git
+cd jaz
+./install.sh     <span class="c"># checks your Mac, gets the model, builds, opens Jaz</span></pre>
+    <div class="steps">
+      <div><b>Microphone</b>macOS asks once. Click Allow.</div>
+      <div><b>Accessibility</b>So Jaz can notice the fn key and type the text for you.</div>
+      <div><b>System audio</b>Asked the first time you record a meeting, to hear the other side.</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="honest">
+      <h2>What "early alpha" means here</h2>
+      <p>Jaz was built in a day and has been used on one Mac. It works for its author every day; it has not met yours yet.</p>
+      <p>It is not signed with an Apple Developer ID, so macOS asks for the permissions again after every update. There is no settings window and the hotkey is fixed to fn.</p>
+      <p style="margin:0">If it breaks, <a href="https://github.com/toleberdyyeva/jaz/issues">open an issue</a> and attach <code>~/Library/Logs/Jaz.log</code>.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span><b style="color:var(--dim)">jaz</b> (жаз) — Kazakh for "write". Pronounced like the music.</span>
+    <span>MIT licence · <a href="https://github.com/toleberdyyeva/jaz">Source on GitHub</a></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const island = document.getElementById('island'), wave = document.getElementById('wave');
+  const typed = document.getElementById('typed'), fn = document.getElementById('fn'), caption = document.getElementById('caption');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const bars = [];
+  for (let i = 0; i < 22; i++) { const b = document.createElement('b'); wave.appendChild(b); bars.push(b); }
+
+  let talking = false, levels = bars.map(() => 0);
+  setInterval(() => {
+    if (!talking) return;
+    levels.shift();
+    // Speech-like envelope: syllable bursts with short gaps.
+    const t = performance.now() / 1000;
+    const burst = Math.max(0, Math.sin(t * 7.3) * .55 + Math.sin(t * 2.1) * .35 + .25);
+    levels.push(Math.min(1, burst * (.55 + Math.random() * .6)));
+    bars.forEach((b, i) => { b.style.height = Math.max(3, levels[i] * 22) + 'px'; b.style.opacity = .35 + .65 * (i / bars.length); });
+  }, 70);
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const scenes = [
+    { hold: true,  ms: 2600, text: "Sounds good, let's meet on Thursday at three. " },
+    { hold: false, ms: 4200, text: "I looked at the proposal and I have two questions. First, who owns the rollout? Second, what happens if payments slip again? " },
+  ];
+
+  async function tap() { fn.classList.add('down'); await sleep(110); fn.classList.remove('down'); await sleep(120); }
+
+  async function run() {
+    for (;;) {
+      for (const s of scenes) {
+        typed.textContent = '';
+        island.classList.remove('thinking', 'locked');
+        if (s.hold) {
+          caption.textContent = 'Hold fn and talk';
+          await sleep(900);
+          fn.classList.add('down'); caption.textContent = 'Holding fn…';
+        } else {
+          caption.textContent = 'Double-tap fn for hands-free';
+          await sleep(900);
+          await tap(); await tap();
+          island.classList.add('locked'); caption.textContent = 'Hands-free — talk as long as you like';
+        }
+        levels = bars.map(() => 0); talking = true; island.classList.add('on');
+        await sleep(s.ms);
+        if (s.hold) { fn.classList.remove('down'); caption.textContent = 'Released'; }
+        else { await tap(); caption.textContent = 'fn again — done'; }
+        talking = false; island.classList.remove('locked'); island.classList.add('thinking');
+        await sleep(1100);
+        island.classList.remove('on');
+        typed.textContent = s.text;
+        caption.textContent = 'Typed where the cursor is';
+        await sleep(3200);
+      }
+    }
+  }
+  if (reduce) {
+    typed.textContent = scenes[0].text; island.classList.add('on', 'locked');
+    bars.forEach((b, i) => { b.style.height = (4 + (i * 7) % 16) + 'px'; });
+  } else run();
+})();
+</script>
+</body>
+</html>

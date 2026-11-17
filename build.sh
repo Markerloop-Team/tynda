@@ -1,0 +1,32 @@
+#!/bin/zsh
+# Builds Jaz.app next to this script. Needs only the Xcode Command Line Tools (clang).
+set -euo pipefail
+cd "$(dirname "$0")"
+APP=Jaz.app
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
+  -framework Cocoa -framework ApplicationServices -framework AVFoundation \
+  -framework ScreenCaptureKit -framework CoreMedia -framework UserNotifications \
+  Sources/main.m -o "$APP/Contents/MacOS/Jaz"
+cp process.py dictate_server.py "$APP/Contents/Resources/"
+cat > "$APP/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Jaz</string>
+  <key>CFBundleIdentifier</key><string>app.jaz.mac</string>
+  <key>CFBundleExecutable</key><string>Jaz</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Jaz listens to your voice to type what you say and to transcribe your meetings.</string>
+</dict>
+</plist>
+EOF
+# Ad-hoc signature: enough to run on this Mac. macOS treats every rebuild as a new app,
+# so permissions have to be granted again after each build.
+codesign --force --sign - --identifier app.jaz.mac "$APP"
+echo "Built $PWD/$APP"

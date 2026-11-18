@@ -29,7 +29,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 ## Nothing is saved, nothing leaves your Mac
 
-- Your voice is recognised on your Mac by [Whisper large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) running through Apple's [MLX](https://github.com/ml-explore/mlx). Once the model is downloaded, Tynda works with the network off. The one thing it asks the internet for by itself is the number of the newest release, once a day; switch that off with `defaults write app.tynda.mac checkForUpdates -bool NO`.
+- Your voice is recognised on your Mac by [Whisper large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) running through Apple's [MLX](https://github.com/ml-explore/mlx). Once the model is downloaded, Tynda works with the network off. The one thing it asks the internet for by itself is the number of the newest release, once a day (the update itself is downloaded only when you click it); switch that off with `defaults write app.tynda.mac checkForUpdates -bool NO`.
 - The audio lives for a second in a temporary file and is deleted as soon as it becomes text.
 - The text is typed into your app and is not written anywhere else. There is no history.
 - Your settings — the key, the languages and the *My words* list — stay in the app's preferences on your Mac.
@@ -50,7 +50,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 ### Download
 
-1. Download **[Tynda-0.3.1.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.3.1/Tynda-0.3.1.dmg)** (20 MB), open it and drag Tynda into Applications.
+1. Download **[Tynda-0.4.0.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.4.0/Tynda-0.4.0.dmg)** (20 MB), open it and drag Tynda into Applications.
 2. Open Tynda from Applications. It is not signed with an Apple Developer ID, so macOS refuses the first time: open System Settings → Privacy & Security and click **Open Anyway**.
 3. Tynda installs its speech engine and downloads the model by itself — about 3 GB, a few minutes. The setup window shows how far it is.
 
@@ -79,7 +79,7 @@ Either way, a setup window opens and walks you through the rest, with a live che
 
 Then it gives you a text field to try your first dictation in. You can open this window again any time: Tynda icon in the menu bar → *Setup…*, or just open Tynda again from Applications.
 
-To update: Tynda shows a line in its menu when a new version is out — download it and drag it over the old one — or `git pull && ./install.sh`. What changed in each version is in [CHANGELOG.md](CHANGELOG.md) and on the [releases page](https://github.com/Markerloop-Team/tynda/releases). Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
+To update: Tynda shows a line in its menu when a new version is out — click it, and Tynda downloads the new version, replaces itself and starts again — or `git pull && ./install.sh`. What changed in each version is in [CHANGELOG.md](CHANGELOG.md) and on the [releases page](https://github.com/Markerloop-Team/tynda/releases). Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
 
 ## Uninstall
 

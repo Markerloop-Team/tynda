@@ -6,6 +6,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
+#import <CommonCrypto/CommonDigest.h>
 #import <QuartzCore/QuartzCore.h>
 #import <ServiceManagement/ServiceManagement.h>
 
@@ -53,6 +54,27 @@ static void Log(NSString *format, ...) {
     [h seekToEndOfFile];
     [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
     [h closeFile];
+}
+
+// Runs a command-line tool and waits for it; returns its exit status, or -1 if it would not start.
+static int RunTool(NSString *tool, NSArray<NSString *> *arguments) {
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:tool];
+    task.arguments = arguments;
+    task.standardOutput = task.standardError = [NSFileHandle fileHandleWithNullDevice];
+    if (![task launchAndReturnError:nil]) return -1;
+    [task waitUntilExit];
+    return task.terminationStatus;
+}
+
+static NSString *SHA256OfFile(NSString *path) {
+    NSData *data = [NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:nil];
+    if (!data) return nil;
+    unsigned char hash[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, hash);
+    NSMutableString *hex = [NSMutableString new];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [hex appendFormat:@"%02x", hash[i]];
+    return hex;
 }
 
 #pragma mark - The dictation key
@@ -1428,7 +1450,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSString *_lastText;
     NSMenuItem *_copyLastItem;
     NSMenuItem *_updateItem;
-    NSURL *_updateURL;
+    NSURL *_updateURL;       // the release page, the way out when Tynda cannot update itself
+    NSURL *_updateImage;     // the disk image of the newest release
+    NSString *_updateVersion, *_updateDigest;
+    BOOL _updating;
     NSTimer *_markTimer;
     NSInteger _markPhase, _markShown;
     Onboarding *_onboarding;
@@ -1442,7 +1467,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _infoItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     _infoItem.enabled = NO;
     [menu addItem:_infoItem];
-    _updateItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(openUpdate) keyEquivalent:@""];
+    _updateItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(installUpdate) keyEquivalent:@""];
     _updateItem.target = self;
     _updateItem.hidden = YES;
     [menu addItem:_updateItem];
@@ -1477,11 +1502,11 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 // Once a day Tynda asks GitHub for the number of the newest release — the one thing it ever asks
 // the network for by itself. Nothing about the user or the Mac is sent. A newer version shows up as
-// a line in the menu; nothing is downloaded or installed without a click.
+// a line in the menu; nothing is downloaded or installed without a click on it.
 // Switch it off with: defaults write app.tynda.mac checkForUpdates -bool NO
 - (void)checkForUpdate {
     id wanted = [NSUserDefaults.standardUserDefaults objectForKey:@"checkForUpdates"];
-    if (wanted && ![wanted boolValue]) return;
+    if ((wanted && ![wanted boolValue]) || _updating) return;
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://api.github.com/repos/Markerloop-Team/tynda/releases?per_page=1"]];
     request.timeoutInterval = 15;
     [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
@@ -1495,16 +1520,120 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         NSString *newest = [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag;
         NSString *mine = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"0";
         BOOL newer = [newest compare:mine options:NSNumericSearch] == NSOrderedDescending;
+        // The disk image attached to that release, and the checksum GitHub publishes for it.
+        NSString *image = nil, *digest = nil;
+        NSString *imageName = [NSString stringWithFormat:@"Tynda-%@.dmg", newest];
+        NSArray *assets = [release[@"assets"] isKindOfClass:NSArray.class] ? release[@"assets"] : @[];
+        for (NSDictionary *asset in assets) {
+            if (![asset isKindOfClass:NSDictionary.class] || ![asset[@"name"] isEqual:imageName]) continue;
+            NSString *url = asset[@"browser_download_url"], *sum = asset[@"digest"];
+            if ([url isKindOfClass:NSString.class] && [url hasPrefix:@"https://github.com/Markerloop-Team/tynda/releases/download/"]) image = url;
+            if ([sum isKindOfClass:NSString.class] && [sum hasPrefix:@"sha256:"]) digest = [sum substringFromIndex:7];
+        }
         Log(@"update: the newest release is %@, this is %@", newest, mine);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (self->_updating) return;
             self->_updateURL = [NSURL URLWithString:page];
-            self->_updateItem.title = [NSString stringWithFormat:L(@"Tynda %@ is out — get it…", @"Вышла Tynda %@ — скачать…"), newest];
+            self->_updateImage = image ? [NSURL URLWithString:image] : nil;
+            self->_updateVersion = newest;
+            self->_updateDigest = digest;
+            self->_updateItem.title = [NSString stringWithFormat:L(@"Tynda %@ is out — update", @"Вышла Tynda %@ — обновить"), newest];
             self->_updateItem.hidden = !newer;
+            // For checking an update without a click: TYNDA_UPDATE_NOW=1 in the environment.
+            if (newer && getenv("TYNDA_UPDATE_NOW")) [self installUpdate];
         });
     }] resume];
 }
 
 - (void)openUpdate { if (_updateURL) [NSWorkspace.sharedWorkspace openURL:_updateURL]; }
+
+// A click on the update line: download the new Tynda, put it in place of this one, start it.
+// Whenever that is not possible — the folder cannot be written to, the download does not check out —
+// the release page opens instead, as it did before.
+- (void)installUpdate {
+    if (_updating) return;
+    NSString *app = NSBundle.mainBundle.bundlePath;
+    NSString *folder = app.stringByDeletingLastPathComponent;
+    if (!_updateImage || ![app.pathExtension isEqual:@"app"] || ![NSFileManager.defaultManager isWritableFileAtPath:folder]) {
+        [self openUpdate];
+        return;
+    }
+    _updating = YES;
+    NSString *version = _updateVersion, *digest = _updateDigest;
+    _updateItem.title = [NSString stringWithFormat:L(@"Updating to Tynda %@…", @"Обновляюсь до Tynda %@…"), version];
+    _updateItem.action = NULL;   // greyed out while it works
+    Log(@"update: downloading %@", version);
+    [[NSURLSession.sharedSession downloadTaskWithURL:_updateImage completionHandler:^(NSURL *file, NSURLResponse *response, NSError *error) {
+        NSInteger code = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+        NSString *staged = [folder stringByAppendingPathComponent:@".Tynda-update.app"];
+        NSString *problem = (file && code == 200)
+            ? [self stageUpdateFrom:file.path version:version digest:digest at:staged]
+            : [NSString stringWithFormat:@"the download failed (%ld): %@", (long)code, error.localizedDescription];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (problem) {
+                Log(@"update: %@", problem);
+                [NSFileManager.defaultManager removeItemAtPath:staged error:nil];
+                self->_updating = NO;
+                self->_updateItem.title = [NSString stringWithFormat:L(@"Tynda %@ is out — get it…", @"Вышла Tynda %@ — скачать…"), version];
+                self->_updateItem.action = @selector(openUpdate);
+                [self openUpdate];
+                return;
+            }
+            [self swapInUpdate:staged over:app];
+        });
+    }] resume];
+}
+
+// Unpacks the downloaded disk image next to the running app and checks that what came out is
+// the Tynda that was promised. Returns what went wrong, or nil.
+- (NSString *)stageUpdateFrom:(NSString *)download version:(NSString *)version digest:(NSString *)digest at:(NSString *)staged {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    if (digest && ![SHA256OfFile(download) isEqual:digest]) return @"the download does not match the checksum of the release";
+    NSString *work = [NSTemporaryDirectory() stringByAppendingPathComponent:[@"tynda-update-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+    NSString *image = [work stringByAppendingPathComponent:@"Tynda.dmg"], *mount = [work stringByAppendingPathComponent:@"mount"];
+    NSString *problem = nil;
+    if (![fm createDirectoryAtPath:mount withIntermediateDirectories:YES attributes:nil error:nil] || ![fm moveItemAtPath:download toPath:image error:nil]) {
+        problem = @"no room to unpack the download";
+    } else if (RunTool(@"/usr/bin/hdiutil", @[@"attach", @"-nobrowse", @"-readonly", @"-noautoopen", @"-mountpoint", mount, image]) != 0) {
+        problem = @"the disk image does not open";
+    } else {
+        [fm removeItemAtPath:staged error:nil];
+        if (RunTool(@"/usr/bin/ditto", @[[mount stringByAppendingPathComponent:@"Tynda.app"], staged]) != 0) problem = @"the new app could not be copied next to this one";
+        RunTool(@"/usr/bin/hdiutil", @[@"detach", @"-force", mount]);
+    }
+    [fm removeItemAtPath:work error:nil];
+    if (problem) return problem;
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[staged stringByAppendingPathComponent:@"Contents/Info.plist"]];
+    if (![info[@"CFBundleIdentifier"] isEqual:@"app.tynda.mac"] || ![info[@"CFBundleShortVersionString"] isEqual:version]) return @"the disk image holds something other than the promised Tynda";
+    if (RunTool(@"/usr/bin/codesign", @[@"--verify", @"--deep", @"--strict", staged]) != 0) return @"the new app is damaged";
+    return nil;
+}
+
+// The swap needs this app gone, so a small script outlives it: waits for the exit, moves the old
+// app aside, the new one in, and starts it. If the new one will not move in, the old one comes back.
+- (void)swapInUpdate:(NSString *)staged over:(NSString *)app {
+    NSString *script =
+        @"while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done\n"
+        @"old=\"${3:h}/.Tynda-old.app\"\n"
+        @"rm -rf \"$old\"\n"
+        @"mv \"$3\" \"$old\" && { mv \"$2\" \"$3\" || mv \"$old\" \"$3\"; }\n"
+        @"rm -rf \"$old\" \"$2\"\n"
+        @"open \"$3\"\n";
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:@"/bin/zsh"];
+    task.arguments = @[@"-c", script, @"tynda-update", [NSString stringWithFormat:@"%d", NSProcessInfo.processInfo.processIdentifier], staged, app];
+    task.standardInput = task.standardOutput = task.standardError = [NSFileHandle fileHandleWithNullDevice];
+    if (![task launchAndReturnError:nil]) {
+        Log(@"update: the swap could not start");
+        [NSFileManager.defaultManager removeItemAtPath:staged error:nil];
+        _updating = NO;
+        _updateItem.action = @selector(openUpdate);
+        [self openUpdate];
+        return;
+    }
+    Log(@"update: %@ is ready, restarting into it", _updateVersion);
+    [NSApp terminate:nil];
+}
 
 - (void)reportProblem {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://github.com/Markerloop-Team/tynda/issues/new/choose"]];

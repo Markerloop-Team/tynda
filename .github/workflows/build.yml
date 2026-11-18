@@ -14,7 +14,7 @@ jobs:
 
       - name: Scripts can be run
         run: |
-          for f in install.sh uninstall.sh build.sh tools/release.sh tools/make_icon.sh; do
+          for f in install.sh uninstall.sh build.sh setup_engine.sh tools/release.sh tools/make_icon.sh tools/make_dmg.sh; do
             test -x "$f" || { echo "$f is not executable"; exit 1; }
           done
 
@@ -24,6 +24,8 @@ jobs:
           zsh -n uninstall.sh
           zsh -n build.sh
           zsh -n tools/release.sh
+          zsh -n tools/make_dmg.sh
+          zsh -n setup_engine.sh
           python3 -m py_compile dictate_server.py
 
       - name: Build Tynda.app
@@ -33,6 +35,7 @@ jobs:
         run: |
           test -x Tynda.app/Contents/MacOS/Tynda
           test -f Tynda.app/Contents/Resources/dictate_server.py
+          test -x Tynda.app/Contents/Resources/setup_engine.sh
           test -f Tynda.app/Contents/Resources/AppIcon.icns
           built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Tynda.app/Contents/Info.plist)"
           want="$(cat VERSION)"

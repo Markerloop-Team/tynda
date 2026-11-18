@@ -21,6 +21,7 @@ tccutil reset All app.tynda.mac >/dev/null 2>&1 || true
 
 say_step "Removing the app, its settings and the speech model environment"
 [[ -d "$APP" ]] && rm -rf "$APP"
+[[ -d "/Applications/Tynda.app" ]] && rm -rf "/Applications/Tynda.app"   # installed from the download
 [[ -d "$SUPPORT" ]] && rm -rf "$SUPPORT"
 [[ -f "$LOG" ]] && rm -f "$LOG"
 defaults delete app.tynda.mac >/dev/null 2>&1 || true

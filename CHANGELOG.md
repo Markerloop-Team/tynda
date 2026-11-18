@@ -6,6 +6,28 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-18
+
+### Added
+
+- **A download.** `Tynda-0.3.0.dmg` on the release page: open it, drag Tynda into Applications. No git,
+  Homebrew or Terminal needed. The app is still not signed with an Apple Developer ID, so the first time
+  macOS wants a click on Open Anyway in System Settings → Privacy & Security.
+- **Tynda installs its own speech engine.** A downloaded Tynda fetches Python, the engine and the model on
+  first launch — about 3 GB, a few minutes — and the Speech model row in the setup window shows how far it
+  is, with a Try again button if the internet drops.
+- **Update notice.** Once a day Tynda asks GitHub for the number of the newest release and, if there is one,
+  shows a line in its menu that opens the download page. Nothing about you is sent, nothing is installed
+  without a click. Switch it off with `defaults write app.tynda.mac checkForUpdates -bool NO`.
+- **Report a problem** in the menu opens a new issue on GitHub.
+- `tools/make_dmg.sh` builds the disk image; `tools/release.sh` attaches it to the release.
+
+### Changed
+
+- After an update Tynda asks macOS to forget its old Accessibility entry, so System Settings no longer shows
+  the permission as switched on while it does not work.
+- `uninstall.sh` also removes a Tynda that was dragged into `/Applications`.
+
 ## [0.2.1] — 2026-11-18
 
 ### Changed
@@ -72,7 +94,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.0
 [0.1.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.1.1

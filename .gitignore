@@ -1,3 +1,5 @@
 Tynda.app/
 .DS_Store
 __pycache__/
+vendor/
+dist/

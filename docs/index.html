@@ -148,6 +148,14 @@
   .honest h2 { font-size: 28px; }
   .honest p { color: var(--dim); margin: 0 0 10px; max-width: 760px; }
 
+  .word { max-width: 520px; margin: 26px auto 0; padding: 22px 26px; border: 1px solid var(--line); border-radius: 16px; text-align: left; }
+  .word .w { font: 600 30px/1.1 var(--serif); color: var(--ink); }
+  .word .ipa { font: 17px/1 var(--sans); color: var(--dim); margin-left: 12px; }
+  .word .pos { display: block; margin-top: 8px; font: italic 15px/1.4 var(--serif); color: var(--faint); }
+  .word .def { display: block; margin-top: 6px; font: 18px/1.4 var(--serif); color: var(--ink); }
+  .way { font: 600 19px/1.3 var(--sans); color: var(--ink); margin: 34px 0 12px; }
+  .get { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; color: var(--faint); font-size: 14px; }
+  .note { color: var(--faint); font-size: 14px; margin: 18px 0 0; max-width: 640px; }
   footer { margin-top: 90px; border-top: 1px solid var(--line); padding: 28px 0 44px; color: var(--faint); font-size: 14px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   footer a { color: var(--dim); }
 
@@ -176,11 +184,11 @@
   </header>
 
   <div class="hero">
-    <div class="alpha">v0.2.1 · early alpha · free to use · open source</div>
+    <div class="alpha">v0.3.0 · early alpha · free to use · open source</div>
     <h1>Hold <em>fn</em>. Speak.<br>It types.</h1>
     <p class="lede">Tynda is a small Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac and is typed wherever your cursor is.</p>
     <div class="cta">
-      <a class="btn primary" href="#install">Install from source</a>
+      <a class="btn primary" href="#install">Download for Mac</a>
       <a class="btn" href="https://github.com/Markerloop-Team/tynda">View on GitHub</a>
     </div>
 
@@ -196,6 +204,12 @@
         <div class="field"><span class="who">MESSAGE</span><span id="typed"></span><span class="caret"></span></div>
         <div class="keys"><kbd id="fn">fn</kbd><span id="caption">Hold fn and talk</span></div>
       </div>
+    </div>
+
+    <div class="word" aria-label="What the name means">
+      <span class="w">Tyn·da</span><span class="ipa">/təŋˈdɑ/</span>
+      <span class="pos">verb, imperative · Kazakh <span lang="kk">тыңда</span></span>
+      <span class="def">Listen.</span>
     </div>
   </div>
 
@@ -225,7 +239,7 @@
     <div class="two">
       <div>
         <h2>Nothing is saved. Nothing leaves your Mac.</h2>
-        <p class="sub">Your voice is recognised on your Mac by Whisper large-v3-turbo running through Apple's MLX. Once the model is downloaded, Tynda works with the network cable pulled out.</p>
+        <p class="sub">Your voice is recognised on your Mac by Whisper large-v3-turbo running through Apple's MLX. Once the model is downloaded, Tynda works with the network cable pulled out. The one thing it asks the internet for by itself: once a day, the number of the newest version.</p>
       </div>
       <div class="card">
         <ul class="plain">
@@ -255,23 +269,37 @@
 
   <section id="install">
     <h2>Install</h2>
-    <p class="sub">There is no signed download yet, so Tynda is installed from source. You need the Xcode Command Line Tools. The script does the rest, then a setup window walks you through the permissions and your first dictation.</p>
+    <p class="sub">Two ways to get it. The download needs nothing but your Mac. Building from source is for those who want to read or change the code.</p>
+
+    <h3 class="way">Download</h3>
+    <div class="get"><a class="btn primary" href="https://github.com/Markerloop-Team/tynda/releases/download/v0.3.0/Tynda-0.3.0.dmg">Download Tynda 0.3.0</a><span>20 MB · Apple silicon · macOS 14 or newer</span></div>
+    <div class="steps">
+      <div><b>Drag it in</b>Open the downloaded file and drag Tynda into Applications. Then open Tynda from Applications.</div>
+      <div><b>Tell macOS it is fine</b>Tynda is not signed with an Apple Developer ID, so macOS refuses the first time. Open System Settings → Privacy &amp; Security and click Open Anyway.</div>
+      <div><b>Wait for the speech model</b>Tynda fetches its speech engine and model by itself: about 3 GB, a few minutes. The setup window shows how far it is.</div>
+    </div>
+
+    <h3 class="way">Or build it from source</h3>
+    <p class="sub" style="margin-bottom:14px">You need the Xcode Command Line Tools, and Python 3.10–3.13 or uv. The script does the rest.</p>
 <pre>git clone https://github.com/Markerloop-Team/tynda.git
 cd tynda
 ./install.sh     <span class="c"># checks your Mac, gets the model, builds, opens Tynda</span></pre>
+    <h3 class="way">Then the setup window takes over</h3>
     <div class="steps">
       <div><b>Microphone</b>macOS asks once. Click Allow.</div>
       <div><b>Accessibility</b>So Tynda can notice the fn key and type the text for you.</div>
       <div><b>Dictation key</b>fn by default. If it is taken, pick another key right in the setup window.</div>
     </div>
+    <p class="note">To remove Tynda, quit it and drag it from Applications to the Trash. Its speech engine lives in <code>~/Library/Application Support/Tynda</code>; delete that folder too.</p>
+    <p class="note">To update, Tynda tells you in its menu when a new version is out. Download it and drag it over the old one; macOS will ask for the permissions again.</p>
   </section>
 
   <section>
     <div class="honest">
       <h2>What "early alpha" means here</h2>
       <p>Tynda is a few days old and has been used on one Mac. It works on its author's Mac; it has not met yours yet.</p>
-      <p>It is not signed with an Apple Developer ID, so macOS asks for the permissions again after every update. What changed in each version is on the <a href="https://github.com/Markerloop-Team/tynda/releases">releases page</a>.</p>
-      <p style="margin:0">If it breaks, <a href="https://github.com/Markerloop-Team/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
+      <p>It is not signed with an Apple Developer ID, so macOS wants a click on Open Anyway the first time, and asks for the permissions again after every update. What changed in each version is on the <a href="https://github.com/Markerloop-Team/tynda/releases">releases page</a>.</p>
+      <p style="margin:0">If it breaks, or you want to reach the developer: Tynda menu → Report a problem, or <a href="https://github.com/Markerloop-Team/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
     </div>
   </section>
 

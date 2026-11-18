@@ -12,13 +12,18 @@
 // The Python script travels inside the app bundle.
 static NSURL *ScriptsDir(void) { return NSBundle.mainBundle.resourceURL; }
 
-// The Python that has mlx-whisper installed: the one install.sh creates, or a `uv tool install mlx-whisper`.
+// The Python that has mlx-whisper installed: the one the app or install.sh creates, or a `uv tool install mlx-whisper`.
 // Override with: defaults write app.tynda.mac python /path/to/python
+static NSString *SupportDir(void) { return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tynda"]; }
+// Present while the app is installing its own engine: a half-built environment must not be taken for a ready one.
+static NSString *SetupMarker(void) { return [SupportDir() stringByAppendingPathComponent:@"setting-up"]; }
+
 static NSString *PythonPath(void) {
     NSMutableArray<NSString *> *candidates = [NSMutableArray new];
     NSString *custom = [NSUserDefaults.standardUserDefaults stringForKey:@"python"];
     if (custom.length) [candidates addObject:custom.stringByExpandingTildeInPath];
-    [candidates addObject:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Tynda/venv/bin/python"]];
+    if (![NSFileManager.defaultManager fileExistsAtPath:SetupMarker()])
+        [candidates addObject:[SupportDir() stringByAppendingPathComponent:@"venv/bin/python"]];
     [candidates addObject:[NSHomeDirectory() stringByAppendingPathComponent:@".local/share/uv/tools/mlx-whisper/bin/python"]];
     for (NSString *c in candidates) if ([NSFileManager.defaultManager isExecutableFileAtPath:c]) return c;
     return nil;
@@ -297,7 +302,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
     if (!_queue) _queue = [NSMutableArray new];
     NSString *python = PythonPath();
     if (!python) {
-        Log(@"dictation: no Python with mlx-whisper found — run install.sh");
+        Log(@"dictation: no speech engine installed yet");
         return;
     }
     NSTask *task = [NSTask new];
@@ -411,6 +416,100 @@ static NSArray<NSString *> *ChosenLanguages(void) {
     if (!_queue) _queue = [NSMutableArray new];
     [_queue addObject:[@{@"path": path, @"done": [done copy]} mutableCopy]];
     [self pump];
+}
+@end
+
+#pragma mark - Engine setup: a Tynda dragged into Applications installs its own speech engine
+
+// Runs setup_engine.sh from the app bundle: Python, the speech engine and the model, all into
+// ~/Library/Application Support/Tynda. The script reports where it is with "STAGE <name>" lines.
+typedef NS_ENUM(NSInteger, EngineSetupState) { EngineSetupIdle, EngineSetupRunning, EngineSetupFailed };
+
+static const double kModelBytes = 1.62e9;  // whisper-large-v3-turbo, to show how far the download is
+
+@interface EngineSetup : NSObject
+@property(nonatomic) EngineSetupState state;
+@property(nonatomic, copy) void (^onDone)(void);
+- (void)start;
+- (NSString *)detail;  // one line for the setup window
+@end
+
+@implementation EngineSetup {
+    NSString *_stage;
+    NSMutableData *_out, *_err;
+}
+
+- (void)start {
+    NSString *script = [ScriptsDir() URLByAppendingPathComponent:@"setup_engine.sh"].path;
+    if (_state == EngineSetupRunning || ![NSFileManager.defaultManager fileExistsAtPath:script]) return;
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:@"/bin/zsh"];
+    task.arguments = @[script];
+    NSPipe *outPipe = [NSPipe pipe], *errPipe = [NSPipe pipe];
+    task.standardOutput = outPipe;
+    task.standardError = errPipe;
+    _out = [NSMutableData new];
+    _err = [NSMutableData new];
+    _stage = @"python";
+    __weak EngineSetup *weakSelf = self;
+    outPipe.fileHandleForReading.readabilityHandler = ^(NSFileHandle *h) {
+        NSData *d = h.availableData;
+        if (d.length == 0) { h.readabilityHandler = nil; return; }
+        dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf read:d]; });
+    };
+    errPipe.fileHandleForReading.readabilityHandler = ^(NSFileHandle *h) {
+        NSData *d = h.availableData;
+        if (d.length == 0) { h.readabilityHandler = nil; return; }
+        dispatch_async(dispatch_get_main_queue(), ^{ EngineSetup *me = weakSelf; if (me) [me->_err appendData:d]; });
+    };
+    task.terminationHandler = ^(NSTask *t) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf finished:t.terminationStatus]; });
+    };
+    NSError *err = nil;
+    if (![task launchAndReturnError:&err]) {
+        Log(@"setup: cannot start the engine setup: %@", err);
+        _state = EngineSetupFailed;
+        return;
+    }
+    Log(@"setup: installing the speech engine");
+    _state = EngineSetupRunning;
+}
+
+- (void)read:(NSData *)data {
+    [_out appendData:data];
+    NSString *text = [[NSString alloc] initWithData:_out encoding:NSUTF8StringEncoding] ?: @"";
+    for (NSString *line in [text componentsSeparatedByString:@"\n"])
+        if ([line hasPrefix:@"STAGE "]) _stage = [line substringFromIndex:6];
+}
+
+- (void)finished:(int)status {
+    if (status == 0) {
+        Log(@"setup: the speech engine is installed");
+        _state = EngineSetupIdle;
+        if (self.onDone) self.onDone();
+        return;
+    }
+    NSString *errors = [[NSString alloc] initWithData:_err encoding:NSUTF8StringEncoding] ?: @"";
+    if (errors.length > 800) errors = [errors substringFromIndex:errors.length - 800];
+    Log(@"setup: stopped at stage %@ with status %d: %@", _stage, status, errors);
+    _state = EngineSetupFailed;
+}
+
+- (NSString *)detail {
+    if (_state == EngineSetupFailed)
+        return [_stage isEqual:@"no-uv"]
+            ? L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh.")
+            : L(@"Setup did not finish. Check the internet connection and try again.", @"Установка не завершилась. Проверь интернет и попробуй ещё раз.");
+    if ([_stage isEqual:@"model"]) {
+        NSString *blobs = [NSHomeDirectory() stringByAppendingPathComponent:@".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo/blobs"];
+        unsigned long long bytes = 0;
+        for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:blobs error:nil] ?: @[])
+            bytes += [[NSFileManager.defaultManager attributesOfItemAtPath:[blobs stringByAppendingPathComponent:name] error:nil] fileSize];
+        return [NSString stringWithFormat:L(@"Downloading the speech model: %d%% of 1.6 GB. Only this once.", @"Скачивается модель: %d%% из 1,6 ГБ. Только в первый раз."),
+                (int)MIN(99, bytes / kModelBytes * 100)];
+    }
+    if ([_stage isEqual:@"packages"]) return L(@"Installing the speech engine, a few minutes…", @"Ставится движок распознавания, несколько минут…");
+    return L(@"Getting ready: downloading Python…", @"Подготовка: скачивается Python…");
 }
 @end
 
@@ -801,6 +900,7 @@ static NSView *KeyCap(NSString *text) {
 + (BOOL)micGranted;
 @property(nonatomic, copy) BOOL (^engineReady)(void);
 @property(nonatomic, copy) BOOL (^engineInstalled)(void);
+@property(nonatomic, strong) EngineSetup *setup;
 @property(nonatomic, copy) BOOL (^listening)(void);
 @property(nonatomic, copy) void (^hotkeyChanged)(void);
 @property(nonatomic, copy) void (^languagesChanged)(void);
@@ -1049,11 +1149,13 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
 
     BOOL installed = self.engineInstalled && self.engineInstalled();
     BOOL ready = self.engineReady && self.engineReady();
-    [self set:_engine ok:ready busy:installed && !ready
+    BOOL settingUp = self.setup.state == EngineSetupRunning, failed = !installed && self.setup.state == EngineSetupFailed;
+    [self set:_engine ok:ready busy:settingUp || (installed && !ready)
        detail:ready ? L(@"Loaded. Runs on this Mac.", @"Загружена. Работает на этом Mac.")
+                    : (settingUp || failed ? [self.setup detail]
                     : (installed ? L(@"Loading into memory, a few seconds…", @"Загружается в память, несколько секунд…")
-                                 : L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh."))
-       button:nil];
+                                 : L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh.")))
+       button:failed ? L(@"Try again", @"Повторить") : nil];
 
     _login.state = SMAppService.mainAppService.status == SMAppServiceStatusEnabled ? NSControlStateValueOn : NSControlStateValueOff;
 
@@ -1246,7 +1348,10 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     [self refresh];
     [_window makeKeyAndOrderFront:nil];
 }
-- (void)engineAction {}
+- (void)engineAction {
+    [self.setup start];
+    [self refresh];
+}
 
 - (void)doneAction {
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"onboarded"];
@@ -1305,6 +1410,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSMenuItem *_accessItem;
     DictationRecorder *_dictation;
     Transcriber *_transcriber;
+    EngineSetup *_setup;
     Island *_island;
     CFMachPortRef _tap;
     NSTimer *_tapTimer;
@@ -1321,6 +1427,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSUInteger _wavCounter;
     NSString *_lastText;
     NSMenuItem *_copyLastItem;
+    NSMenuItem *_updateItem;
+    NSURL *_updateURL;
     NSTimer *_markTimer;
     NSInteger _markPhase, _markShown;
     Onboarding *_onboarding;
@@ -1334,8 +1442,13 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _infoItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     _infoItem.enabled = NO;
     [menu addItem:_infoItem];
+    _updateItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(openUpdate) keyEquivalent:@""];
+    _updateItem.target = self;
+    _updateItem.hidden = YES;
+    [menu addItem:_updateItem];
     [menu addItem:NSMenuItem.separatorItem];
     LoadHotkey();
+    [self forgetStalePermission];
     _dictationItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(toggleDictation) keyEquivalent:@""];
     _dictationItem.target = self;
     [menu addItem:_dictationItem];
@@ -1346,12 +1459,70 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     _accessItem = [[NSMenuItem alloc] initWithTitle:L(@"Setup…", @"Настройка…") action:@selector(showOnboarding) keyEquivalent:@""];
     _accessItem.target = self;
     [menu addItem:_accessItem];
+    NSMenuItem *report = [[NSMenuItem alloc] initWithTitle:L(@"Report a problem…", @"Сообщить о проблеме…") action:@selector(reportProblem) keyEquivalent:@""];
+    report.target = self;
+    [menu addItem:report];
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[[NSMenuItem alloc] initWithTitle:L(@"Quit", @"Выйти") action:@selector(terminate:) keyEquivalent:@"q"]];
     _statusItem.menu = menu;
     [self setUpDictation];
     _markTimer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { [self refreshDictationMenu]; }];
     [NSRunLoop.mainRunLoop addTimer:_markTimer forMode:NSRunLoopCommonModes];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self checkForUpdate]; });
+    NSTimer *daily = [NSTimer timerWithTimeInterval:24 * 3600 repeats:YES block:^(NSTimer *t) { [self checkForUpdate]; }];
+    [NSRunLoop.mainRunLoop addTimer:daily forMode:NSRunLoopCommonModes];
+}
+
+#pragma mark Updates and feedback
+
+// Once a day Tynda asks GitHub for the number of the newest release — the one thing it ever asks
+// the network for by itself. Nothing about the user or the Mac is sent. A newer version shows up as
+// a line in the menu; nothing is downloaded or installed without a click.
+// Switch it off with: defaults write app.tynda.mac checkForUpdates -bool NO
+- (void)checkForUpdate {
+    id wanted = [NSUserDefaults.standardUserDefaults objectForKey:@"checkForUpdates"];
+    if (wanted && ![wanted boolValue]) return;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://api.github.com/repos/Markerloop-Team/tynda/releases?per_page=1"]];
+    request.timeoutInterval = 15;
+    [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
+    [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSArray *list = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        NSDictionary *release = [list isKindOfClass:NSArray.class] ? list.firstObject : nil;
+        NSString *tag = [release isKindOfClass:NSDictionary.class] ? release[@"tag_name"] : nil;
+        NSString *page = [release isKindOfClass:NSDictionary.class] ? release[@"html_url"] : nil;
+        if (![tag isKindOfClass:NSString.class] || ![page isKindOfClass:NSString.class]) return;
+        if (![page hasPrefix:@"https://github.com/Markerloop-Team/tynda/"]) return;
+        NSString *newest = [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag;
+        NSString *mine = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"0";
+        BOOL newer = [newest compare:mine options:NSNumericSearch] == NSOrderedDescending;
+        Log(@"update: the newest release is %@, this is %@", newest, mine);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self->_updateURL = [NSURL URLWithString:page];
+            self->_updateItem.title = [NSString stringWithFormat:L(@"Tynda %@ is out — get it…", @"Вышла Tynda %@ — скачать…"), newest];
+            self->_updateItem.hidden = !newer;
+        });
+    }] resume];
+}
+
+- (void)openUpdate { if (_updateURL) [NSWorkspace.sharedWorkspace openURL:_updateURL]; }
+
+- (void)reportProblem {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://github.com/Markerloop-Team/tynda/issues/new/choose"]];
+}
+
+// An update is a new app for macOS, because the signature is ad hoc. System Settings then shows
+// Accessibility as switched on while it no longer works. Forgetting the old entry makes macOS ask again.
+- (void)forgetStalePermission {
+    NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"";
+    NSString *seen = [NSUserDefaults.standardUserDefaults stringForKey:@"version"];
+    [NSUserDefaults.standardUserDefaults setObject:version forKey:@"version"];
+    if (!seen || [seen isEqual:version] || AXIsProcessTrusted()) return;
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/tccutil"];
+    task.arguments = @[@"reset", @"Accessibility", NSBundle.mainBundle.bundleIdentifier ?: @"app.tynda.mac"];
+    task.standardOutput = task.standardError = [NSFileHandle fileHandleWithNullDevice];
+    if ([task launchAndReturnError:nil]) [task waitUntilExit];
+    Log(@"setup: updated from %@ to %@, asked macOS to forget the old Accessibility entry", seen, version);
 }
 
 #pragma mark Dictation
@@ -1369,7 +1540,8 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 
 // What stands between the user and dictation right now.
 - (MarkKind)markKind {
-    BOOL needsUser = ![Onboarding micGranted] || !AXIsProcessTrusted() || (gHotkey == kKeyFn && ![Onboarding fnFree]) || !PythonPath();
+    BOOL noEngine = !PythonPath() && _setup.state != EngineSetupRunning;
+    BOOL needsUser = ![Onboarding micGranted] || !AXIsProcessTrusted() || (gHotkey == kKeyFn && ![Onboarding fnFree]) || noEngine;
     if (needsUser) return MarkAttention;
     return (_tap && _transcriber.ready) ? MarkReady : MarkLoading;
 }
@@ -1400,6 +1572,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
         _onboarding = [Onboarding new];
         __weak AppDelegate *weakSelf = self;
         _onboarding.engineInstalled = ^BOOL { return PythonPath() != nil; };
+        _onboarding.setup = _setup;
         _onboarding.engineReady = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_transcriber.ready : NO; };
         _onboarding.listening = ^BOOL { AppDelegate *me = weakSelf; return me ? me->_tap != NULL : NO; };
         _onboarding.languagesChanged = ^{
@@ -1440,6 +1613,14 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     __weak AppDelegate *weakMe = self;
     _transcriber.onReady = ^{ [weakMe refreshDictationMenu]; };
     [_transcriber start];
+    _setup = [EngineSetup new];
+    _setup.onDone = ^{
+        AppDelegate *me = weakMe;
+        if (!me) return;
+        [me->_transcriber start];
+        [me refreshDictationMenu];
+    };
+    if (!PythonPath()) [_setup start];  // no engine yet: the app was dragged into Applications, not built by install.sh
     [self refreshDictationMenu];
 
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;

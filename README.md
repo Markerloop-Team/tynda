@@ -10,7 +10,7 @@
 
 Free to use, open source, MIT. Pull requests are welcome — see [Contributing](#contributing).
 
-> **Early alpha.** Tynda is new and has been used on one Mac. It is installed from source, there is no signed download yet. Expect rough edges and tell us about them.
+> **Early alpha.** Tynda is new and has been used on one Mac. The download is not signed with an Apple Developer ID yet, so macOS asks for an extra click. Expect rough edges and tell us about them.
 
 ## How it works
 
@@ -29,7 +29,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 ## Nothing is saved, nothing leaves your Mac
 
-- Your voice is recognised on your Mac by [Whisper large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) running through Apple's [MLX](https://github.com/ml-explore/mlx). Once the model is downloaded, Tynda works with the network off.
+- Your voice is recognised on your Mac by [Whisper large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) running through Apple's [MLX](https://github.com/ml-explore/mlx). Once the model is downloaded, Tynda works with the network off. The one thing it asks the internet for by itself is the number of the newest release, once a day; switch that off with `defaults write app.tynda.mac checkForUpdates -bool NO`.
 - The audio lives for a second in a temporary file and is deleted as soon as it becomes text.
 - The text is typed into your app and is not written anywhere else. There is no history.
 - Your settings — the key, the languages and the *My words* list — stay in the app's preferences on your Mac.
@@ -43,10 +43,20 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 | macOS | 14 Sonoma or newer |
 | Memory | 8 GB minimum, 16 GB recommended. The model stays loaded (about 2 GB). |
 | Disk | about 3 GB (model 1.6 GB + Python packages) |
-| Tools | Xcode Command Line Tools, and Python 3.10–3.13 or [uv](https://docs.astral.sh/uv/) |
+| Tools | None for the download. To build from source: Xcode Command Line Tools, and Python 3.10–3.13 or [uv](https://docs.astral.sh/uv/) |
 | Keyboard | The fn / 🌐 key set to "Do Nothing" in System Settings → Keyboard — or another key of your choice |
 
 ## Install
+
+### Download
+
+1. Download **[Tynda-0.3.0.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.3.0/Tynda-0.3.0.dmg)** (20 MB), open it and drag Tynda into Applications.
+2. Open Tynda from Applications. It is not signed with an Apple Developer ID, so macOS refuses the first time: open System Settings → Privacy & Security and click **Open Anyway**.
+3. Tynda installs its speech engine and downloads the model by itself — about 3 GB, a few minutes. The setup window shows how far it is.
+
+No git, Homebrew or Terminal needed. Everything Tynda installs goes into `~/Library/Application Support/Tynda`, and the model into `~/.cache/huggingface`.
+
+### Or build from source
 
 ```bash
 git clone https://github.com/Markerloop-Team/tynda.git
@@ -56,20 +66,26 @@ cd tynda
 
 The script checks your Mac, downloads the speech model, builds the app and puts it into `~/Applications`. It takes a few minutes the first time, mostly the download.
 
-When it finishes, a setup window opens and walks you through the rest, with a live check mark for each step:
+### The setup window
+
+Either way, a setup window opens and walks you through the rest, with a live check mark for each step:
 
 1. **Microphone** — to hear you.
 2. **Accessibility** — to notice the fn key and to type the text for you.
 3. **Dictation key** — fn has to be free ("Do Nothing" in Keyboard settings), or pick another key right there.
 4. **Languages** — your keyboard layouts' languages and Kazakh to begin with; change the list any time.
 5. **My words** — optional: names and terms to spell your way.
-6. **Speech model** — loads in a few seconds.
+6. **Speech model** — loads in a few seconds. After a download install, this is where you watch it being fetched.
 
 Then it gives you a text field to try your first dictation in. You can open this window again any time: Tynda icon in the menu bar → *Setup…*, or just open Tynda again from Applications.
 
-To update: `git pull && ./install.sh`. What changed in each version is in [CHANGELOG.md](CHANGELOG.md) and on the [releases page](https://github.com/Markerloop-Team/tynda/releases). Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
+To update: Tynda shows a line in its menu when a new version is out — download it and drag it over the old one — or `git pull && ./install.sh`. What changed in each version is in [CHANGELOG.md](CHANGELOG.md) and on the [releases page](https://github.com/Markerloop-Team/tynda/releases). Because the app is not signed with an Apple Developer ID, macOS treats each new build as a new app and asks for the permissions again.
 
 ## Uninstall
+
+Installed from the download: quit Tynda, drag it from Applications to the Trash, and delete `~/Library/Application Support/Tynda`.
+
+With the source at hand:
 
 ```bash
 ./uninstall.sh          # the app, its settings, permissions and Python environment
@@ -81,13 +97,15 @@ To update: `git pull && ./install.sh`. What changed in each version is in [CHANG
 - `Sources/main.m` — the whole app in one Objective-C file: the menu bar icon, the island, microphone capture (AVAudioEngine), the fn listener (CGEventTap), pasting, and the setup window.
 - `dictate_server.py` — keeps the speech model loaded so a phrase takes about a second instead of five.
 - `build.sh` / `install.sh` / `uninstall.sh` — no Xcode project; `clang` is enough.
+- `setup_engine.sh` — travels inside the app; installs the speech engine when the app was downloaded rather than built.
+- `tools/make_dmg.sh` — builds the downloadable disk image, with [uv](https://docs.astral.sh/uv/) inside so the app can set itself up.
 - `tools/make_icon.m` — draws the icon; `tools/make_icon.sh` regenerates the image files.
 
 The only file Tynda writes is a diagnostics log, `~/Library/Logs/Tynda.log`. It records events and timings ("recorded 2.5s", "23 characters in 1.4s") and never what you said.
 
 ## Known limits
 
-- Not signed or notarised: source install only, permissions reset on every rebuild.
+- Not signed or notarised: macOS wants a click on Open Anyway the first time, and permissions reset on every update.
 - The text is pasted through the clipboard (your clipboard is restored half a second later).
 - If the menu bar is full, macOS may hide the Tynda icon. Dictation still works; open Tynda again from Applications to get to the setup window.
 - Tested on macOS 26 only.

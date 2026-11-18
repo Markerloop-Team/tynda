@@ -6,6 +6,30 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-19
+
+### Added
+
+- **Normalize.** With [Claude Code](https://claude.com/claude-code) on the Mac, the island does not leave
+  after a dictation: it turns into a **Normalize** button. A click, and Claude rewrites what was said into
+  what was meant — your own spoken corrections applied, filler dropped, a list where you spoke in points —
+  and the result replaces the raw text. The button goes away when you type or click elsewhere, start a new
+  dictation, or after ten seconds. If you have moved on meanwhile, the tidy text goes to the clipboard.
+- **Normalize every dictation.** A switch in the setup window, off by default: each dictation is typed
+  once, already tidy, a few seconds later. If Claude Code does not answer, the words go in as spoken.
+- Tynda holds no key and talks to no server itself: Normalize runs the Claude Code that is already
+  installed and signed in. Without Claude Code there is no button and nothing changes.
+
+### Changed
+
+- **Privacy, plainly.** Normalize is the one thing that sends anything out: the text of a dictation, never
+  the audio, goes to Anthropic through Claude Code — only on your click, or for every dictation if you
+  switch that on. Everything else stays as it was: on the Mac, nothing saved.
+- **A new island.** Larger, with a lighter typeface, on dark Liquid Glass (macOS 26; a dark blur on
+  macOS 14 and 15) instead of flat black.
+- Tynda looks for a new version three seconds after it starts, not twenty.
+- The menu says the model is "loading into memory" at start, so it is not taken for a download.
+
 ## [0.4.1] — 2026-11-18
 
 ### Changed
@@ -129,7 +153,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.1

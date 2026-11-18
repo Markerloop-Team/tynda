@@ -25,6 +25,8 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 **Your words.** Names, brands and terms can go into *My words* in the setup window. The speech model is shown the list before every phrase and spells those words your way more often — a hint, so not every time. Up to 100.
 
+**Normalize.** If [Claude Code](https://claude.com/claude-code) is installed on your Mac, the island turns into a **Normalize** button after each dictation. Click it, and Claude rewrites what you said into what you meant — applies your own spoken corrections ("no, scrap that"), drops the filler, makes a list when you spoke in points — and puts it in place of the raw text. A switch in the setup window does this for every dictation without asking. Tynda holds no key and talks to no server itself: it runs the Claude Code you already have. Without Claude Code there is no button, and nothing changes.
+
 **The icon tells you where things stand.** The wave means ready, dots filling in mean the model is loading, an exclamation mark means the setup needs you.
 
 ## Nothing is saved, nothing leaves your Mac
@@ -34,6 +36,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 - The text is typed into your app and is not written anywhere else. There is no history.
 - Your settings — the key, the languages and the *My words* list — stay in the app's preferences on your Mac.
 - No account, no telemetry, no server.
+- **The one exception is yours to make.** Normalize hands the text of a dictation — never the audio — to Claude Code on your Mac, which sends it to Anthropic like anything else you give Claude Code. It happens only when you click Normalize, or for every dictation if you switch that on in the setup window. It is off until you do, and absent without Claude Code.
 
 ## Requirements
 
@@ -50,7 +53,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 ### Download
 
-1. Download **[Tynda-0.4.1.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.4.1/Tynda-0.4.1.dmg)** (20 MB), open it and drag Tynda into Applications.
+1. Download **[Tynda-0.5.0.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.5.0/Tynda-0.5.0.dmg)** (20 MB), open it and drag Tynda into Applications.
 2. Open Tynda from Applications. It is not signed with an Apple Developer ID, so macOS refuses the first time: open System Settings → Privacy & Security and click **Open Anyway**.
 3. Tynda installs its speech engine and downloads the model by itself — about 3 GB, a few minutes. The setup window shows how far it is.
 
@@ -118,7 +121,7 @@ Tynda is small on purpose, and that is the main thing to protect. Ideas that fit
 - better punctuation and style for more ways of speaking (`STYLE` in `dictate_server.py`);
 - making it work, or fail clearly, on Macs it has not met yet.
 
-Three rules every change has to keep: nothing is saved, nothing leaves the Mac, and there is nothing to configure before the first sentence. [CONTRIBUTING.md](CONTRIBUTING.md) has the practical part — how to build, test and send a pull request.
+Three rules every change has to keep: nothing is saved, nothing leaves the Mac unless the user asks for it, and there is nothing to configure before the first sentence. [CONTRIBUTING.md](CONTRIBUTING.md) has the practical part — how to build, test and send a pull request.
 
 Found a bug? [Open an issue](https://github.com/Markerloop-Team/tynda/issues) and attach `~/Library/Logs/Tynda.log` (it has timings, not your words).
 

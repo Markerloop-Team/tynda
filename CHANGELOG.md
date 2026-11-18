@@ -6,6 +6,15 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-18
+
+### Changed
+
+- **A failed setup says why.** The setup window used to answer every failure of the speech-engine setup
+  with "Check the internet connection". It now names what it can tell: which site did not answer
+  (github.com, pypi.org or huggingface.co), that the disk is full, that macOS stopped the setup, or the
+  step it stopped at.
+
 ## [0.4.0] — 2026-11-18
 
 ### Added
@@ -120,7 +129,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.0

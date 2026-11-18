@@ -441,6 +441,31 @@ static NSArray<NSString *> *ChosenLanguages(void) {
 }
 @end
 
+// What the setup window says when setup stops: the real reason, as far as it can be told from the
+// outside. One short line; the Try again button sits next to it.
+static NSString *SetupFailureLine(NSString *stage, int status, NSString *errors) {
+    if ([stage isEqual:@"no-uv"]) return L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh.");
+    NSString *text = errors.lowercaseString ?: @"";
+    BOOL (^says)(NSArray<NSString *> *) = ^BOOL(NSArray<NSString *> *words) {
+        for (NSString *w in words) if ([text containsString:w]) return YES;
+        return NO;
+    };
+    if (says(@[@"no space left", @"os error 28", @"errno 28", @"disk full"]))
+        return L(@"Not enough free disk space: about 3 GB are needed.", @"Не хватает места на диске: нужно около 3 ГБ.");
+    // Each step downloads from its own site, so a network failure can name the one that did not answer.
+    BOOL model = [stage isEqual:@"model"], packages = [stage isEqual:@"packages"];
+    if (says(@[@"error sending request", @"request failed", @"failed to download", @"failed to fetch", @"dns error", @"failed to lookup",
+               @"nodename nor servname", @"could not resolve", @"connection", @"timed out", @"timeout", @"network", @"certificate",
+               @"ssl", @"tls", @"maxretryerror", @"localentrynotfound"]))
+        return [NSString stringWithFormat:L(@"Could not reach %@. Check the internet or VPN.", @"Не удалось связаться с %@. Проверь интернет или VPN."),
+                model ? @"huggingface.co" : packages ? @"pypi.org" : @"github.com"];
+    if (status == 137 || status == 9)
+        return L(@"macOS stopped the setup. Press Try again.", @"macOS остановила установку. Нажми «Повторить».");
+    return [NSString stringWithFormat:L(@"Stopped while %@ (code %d). Try again or report a problem.", @"Сбой на %@ (код %d). Повтори или сообщи о проблеме."),
+            model ? L(@"downloading the model", @"загрузке модели") : packages ? L(@"installing the engine", @"установке движка") : L(@"getting Python", @"загрузке Python"),
+            status];
+}
+
 #pragma mark - Engine setup: a Tynda dragged into Applications installs its own speech engine
 
 // Runs setup_engine.sh from the app bundle: Python, the speech engine and the model, all into
@@ -458,6 +483,7 @@ static const double kModelBytes = 1.62e9;  // whisper-large-v3-turbo, to show ho
 
 @implementation EngineSetup {
     NSString *_stage;
+    NSString *_failure;   // what the window says after a failed setup
     NSMutableData *_out, *_err;
 }
 
@@ -473,6 +499,7 @@ static const double kModelBytes = 1.62e9;  // whisper-large-v3-turbo, to show ho
     _out = [NSMutableData new];
     _err = [NSMutableData new];
     _stage = @"python";
+    _failure = nil;
     __weak EngineSetup *weakSelf = self;
     outPipe.fileHandleForReading.readabilityHandler = ^(NSFileHandle *h) {
         NSData *d = h.availableData;
@@ -512,16 +539,14 @@ static const double kModelBytes = 1.62e9;  // whisper-large-v3-turbo, to show ho
         return;
     }
     NSString *errors = [[NSString alloc] initWithData:_err encoding:NSUTF8StringEncoding] ?: @"";
+    _failure = SetupFailureLine(_stage, status, errors);
     if (errors.length > 800) errors = [errors substringFromIndex:errors.length - 800];
     Log(@"setup: stopped at stage %@ with status %d: %@", _stage, status, errors);
     _state = EngineSetupFailed;
 }
 
 - (NSString *)detail {
-    if (_state == EngineSetupFailed)
-        return [_stage isEqual:@"no-uv"]
-            ? L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh.")
-            : L(@"Setup did not finish. Check the internet connection and try again.", @"Установка не завершилась. Проверь интернет и попробуй ещё раз.");
+    if (_state == EngineSetupFailed) return _failure ?: SetupFailureLine(_stage, 0, @"");
     if ([_stage isEqual:@"model"]) {
         NSString *blobs = [NSHomeDirectory() stringByAppendingPathComponent:@".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo/blobs"];
         unsigned long long bytes = 0;

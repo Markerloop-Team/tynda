@@ -6,6 +6,16 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-11-18
+
+### Fixed
+
+- **Setup that could never finish.** If Tynda was quit or restarted while it was still installing its speech
+  engine, every later attempt stopped within a second with "Check the internet connection and try again",
+  whatever the connection was. The unfinished setup kept running in the background, and the new one wrote
+  its installer over the running copy, after which macOS refused to start it. Setup now stops the leftover
+  one first and starts clean. If you are stuck on 0.3.0: install 0.3.1 over it and open Tynda again.
+
 ## [0.3.0] — 2026-11-18
 
 ### Added
@@ -94,7 +104,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.0

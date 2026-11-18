@@ -6,6 +6,22 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-18
+
+### Added
+
+- **Tynda updates itself.** When a new version is out, the line in the menu now says "update": one click,
+  and Tynda downloads the new version, checks it against the checksum of the release, puts it in place of
+  the old one and starts again. No browser, no dragging, no Open Anyway. If that is not possible — Tynda sits
+  in a folder it may not write to, or the download does not check out — the release page opens, as before.
+  Nothing is downloaded without the click. This works from 0.4.0 on: an older Tynda still has to be
+  replaced by hand once.
+
+### Known limits
+
+- macOS still asks for the Accessibility permission again after every update, because the app is not
+  signed with an Apple Developer ID.
+
 ## [0.3.1] — 2026-11-18
 
 ### Fixed
@@ -104,7 +120,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.2.1

@@ -19,6 +19,11 @@ mkdir -p "$SUPPORT"
 # uv does the installing. The downloadable app carries its own copy; a build from source uses the Mac's.
 if [[ -f "$HERE/uv" ]]; then
   UV="$SUPPORT/uv"
+  # A setup left running by a Tynda that was quit midway still holds this file. Writing over a
+  # running program makes macOS kill every later launch of it (status 137), so stop the old one
+  # and put the copy in as a new file.
+  pkill -f "$UV" 2>/dev/null || true
+  rm -f "$UV"
   cp -f "$HERE/uv" "$UV"
   chmod +x "$UV"
   xattr -d com.apple.quarantine "$UV" 2>/dev/null || true   # it arrived inside a downloaded app

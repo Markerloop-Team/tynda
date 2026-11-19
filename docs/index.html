@@ -169,6 +169,7 @@
   }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
+<script defer src="https://analytics.markerloop.com/script.js" data-website-id="e6f6b314-1012-45cd-867a-02a9afdbd9f5" data-domains="tynda.markerloop.com" data-do-not-track="true"></script>
 </head>
 <body>
 <div class="wrap">
@@ -179,7 +180,7 @@
       <a class="hide" href="#how">How it works</a>
       <a class="hide" href="#needs">Requirements</a>
       <a href="#install">Install</a>
-      <a href="https://github.com/Markerloop-Team/tynda">GitHub</a>
+      <a href="https://github.com/Markerloop-Team/tynda" data-umami-event="github" data-umami-event-place="header">GitHub</a>
     </nav>
   </header>
 
@@ -188,8 +189,8 @@
     <h1>Hold <em>fn</em>. Speak.<br>It types.</h1>
     <p class="lede">Tynda is a small Mac app that lets you talk instead of typing. Your voice becomes text on your own Mac and is typed wherever your cursor is.</p>
     <div class="cta">
-      <a class="btn primary" href="#install">Download for Mac</a>
-      <a class="btn" href="https://github.com/Markerloop-Team/tynda">View on GitHub</a>
+      <a class="btn primary" href="#install" data-umami-event="download-hero">Download for Mac</a>
+      <a class="btn" href="https://github.com/Markerloop-Team/tynda" data-umami-event="github" data-umami-event-place="hero">View on GitHub</a>
     </div>
 
     <div class="stage" aria-label="Demonstration of dictation">
@@ -272,7 +273,7 @@
     <p class="sub">Two ways to get it. The download needs nothing but your Mac. Building from source is for those who want to read or change the code.</p>
 
     <h3 class="way">Download</h3>
-    <div class="get"><a class="btn primary" href="https://github.com/Markerloop-Team/tynda/releases/download/v0.5.0/Tynda-0.5.0.dmg">Download Tynda 0.5.0</a><span>20 MB · Apple silicon · macOS 14 or newer</span></div>
+    <div class="get"><a class="btn primary" href="https://github.com/Markerloop-Team/tynda/releases/download/v0.5.0/Tynda-0.5.0.dmg" data-umami-event="download-dmg" data-umami-event-version="0.5.0">Download Tynda 0.5.0</a><span>20 MB · Apple silicon · macOS 14 or newer</span></div>
     <div class="steps">
       <div><b>Drag it in</b>Open the downloaded file and drag Tynda into Applications. Then open Tynda from Applications.</div>
       <div><b>Tell macOS it is fine</b>Tynda is not signed with an Apple Developer ID, so macOS refuses the first time. Open System Settings → Privacy &amp; Security and click Open Anyway.</div>
@@ -299,13 +300,14 @@ cd tynda
       <h2>What "early alpha" means here</h2>
       <p>Tynda is a few days old and has been used on one Mac. It works on its author's Mac; it has not met yours yet.</p>
       <p>It is not signed with an Apple Developer ID, so macOS wants a click on Open Anyway the first time, and asks for the permissions again after every update. What changed in each version is on the <a href="https://github.com/Markerloop-Team/tynda/releases">releases page</a>.</p>
-      <p style="margin:0">If it breaks, or you want to reach the developer: Tynda menu → Report a problem, or <a href="https://github.com/Markerloop-Team/tynda/issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
+      <p style="margin:0">If it breaks, or you want to reach the developer: Tynda menu → Report a problem, or <a href="https://github.com/Markerloop-Team/tynda/issues" data-umami-event="issues">open an issue</a> and attach <code>~/Library/Logs/Tynda.log</code>.</p>
     </div>
   </section>
 
   <footer>
     <span><b style="color:var(--dim)">tynda</b> (тыңда) — Kazakh for "listen".</span>
-    <span>Made by <a href="https://markerloop.com">Markerloop</a> · MIT licence · <a href="https://github.com/Markerloop-Team/tynda">Source on GitHub</a> · pull requests welcome</span>
+    <span>Made by <a href="https://markerloop.com">Markerloop</a> · MIT licence · <a href="https://github.com/Markerloop-Team/tynda" data-umami-event="github" data-umami-event-place="footer">Source on GitHub</a> · pull requests welcome</span>
+    <span>This page counts visits with self-hosted Umami, no cookies. The app itself still sends no telemetry.</span>
   </footer>
 </div>
 

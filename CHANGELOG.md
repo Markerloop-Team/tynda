@@ -6,6 +6,23 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-20
+
+### Changed
+
+- **Normalize writes the text you were thinking towards.** It used to tidy a transcript; now it treats a
+  dictation as thinking aloud and writes the message or the task you meant. Words about the writing itself
+  — "think how to put this better", "shorter", "so he does not do anything extra" — are carried out and
+  left out of the text. Everything else stays content: it is never answered or acted on, and nothing you
+  did not say is added. A short remark stays a short remark.
+- **Normalize knows your names.** It reads what Claude Code already keeps about you on this Mac — your
+  global instructions (`~/.claude/CLAUDE.md`) and the memory indexes of your three most recent projects —
+  and uses them only to recognise and spell the names, projects and terms you say: "epic one nine six"
+  comes out as the identifier you use. No detail from those notes goes into the text unless you said it.
+- **Privacy, plainly.** Those notes travel to Anthropic together with the dictation's text, through the
+  same Claude Code that already sends them in its own sessions — and, as before, only when you click
+  Normalize or have switched it on for every dictation.
+
 ## [0.5.0] — 2026-11-19
 
 ### Added
@@ -154,6 +171,7 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Apple silicon and macOS 14 or newer only.
 
 [Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.5.0...HEAD
+[0.6.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.0

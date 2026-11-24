@@ -6,6 +6,24 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-11-24
+
+### Changed
+
+- **The dictation key always gets an answer.** When dictation cannot happen, the island now says why, with
+  a sign and a short shake, instead of a flat wave or nothing:
+  - the microphone gives no sound at all (a closed lid, a switched-off headset) — said after a second,
+    while the key is still held;
+  - no microphone found; no permission for the microphone;
+  - no Accessibility permission — until now the key was simply not heard;
+  - the speech model is not installed, is being installed, or is still loading into memory. The island no
+    longer pretends to listen in these moments.
+
+### Fixed
+
+- The island could stop appearing over another app's full-screen window after Tynda had been running for
+  days and a display had been plugged in or out. It now gets a fresh window every time it appears.
+
 ## [0.6.0] — 2026-11-20
 
 ### Changed
@@ -171,6 +189,7 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Apple silicon and macOS 14 or newer only.
 
 [Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.5.0...HEAD
+[0.6.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.4.1

@@ -53,7 +53,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 ### Download
 
-1. Download **[Tynda-0.6.1.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.6.1/Tynda-0.6.1.dmg)** (20 MB), open it and drag Tynda into Applications.
+1. Download **[Tynda-0.6.2.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.6.2/Tynda-0.6.2.dmg)** (20 MB), open it and drag Tynda into Applications.
 2. Open Tynda from Applications. It is not signed with an Apple Developer ID, so macOS refuses the first time: open System Settings → Privacy & Security and click **Open Anyway**.
 3. Tynda installs its speech engine and downloads the model by itself — about 3 GB, a few minutes. The setup window shows how far it is.
 

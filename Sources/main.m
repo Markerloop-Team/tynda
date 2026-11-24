@@ -195,6 +195,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
 @interface DictationRecorder : NSObject
 @property(atomic) float level;      // 0…1, smoothed for drawing
 @property(atomic) float peakLevel;  // loudest moment of this recording
+@property(atomic) float rawPeak;    // the largest sample so far; a microphone that is switched off gives exact silence
 - (void)startWithFailure:(void (^)(NSError *error))failed;  // returns at once; `failed` comes on the main queue
 - (NSTimeInterval)stopAndWriteWAV:(NSURL *)url;  // returns the duration in seconds
 - (void)cancel;
@@ -215,6 +216,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
 - (void)startWithFailure:(void (^)(NSError *))failed {
     self.level = 0;
     self.peakLevel = 0;
+    self.rawPeak = 0;
     dispatch_async(_queue, ^{
         NSError *err = nil;
         if (![self startNow:&err]) dispatch_async(dispatch_get_main_queue(), ^{ failed(err); });
@@ -250,7 +252,8 @@ static NSArray<NSString *> *ChosenLanguages(void) {
         const float *ch = channels[0];
         AVAudioFrameCount n = buf.frameLength;
         double sum = 0;
-        for (AVAudioFrameCount i = 0; i < n; i++) sum += ch[i] * ch[i];
+        float top = 0;
+        for (AVAudioFrameCount i = 0; i < n; i++) { sum += ch[i] * ch[i]; float a = fabsf(ch[i]); if (a > top) top = a; }
         @synchronized (samples) { [samples appendBytes:ch length:n * sizeof(float)]; }
         // Map roughly -50…-5 dB onto 0…1; the curve keeps normal speech in the middle of the range.
         double db = 10 * log10(sum / n + 1e-12);
@@ -259,6 +262,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
         if (me) {
             me.level = v;
             if (v > me.peakLevel) me.peakLevel = v;
+            if (top > me.rawPeak) me.rawPeak = top;
         }
     }];
     [_engine prepare];
@@ -306,6 +310,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
 
 @interface Transcriber : NSObject
 @property(atomic) BOOL ready;
+- (void)wake;  // start the engine if it is not running
 @property(nonatomic, copy) void (^onReady)(void);
 - (void)start;
 - (void)restart;  // picks up a changed list of languages
@@ -372,6 +377,8 @@ static NSArray<NSString *> *ChosenLanguages(void) {
     [self start];
     [self pump];
 }
+
+- (void)wake { if (!_task) [self start]; }
 
 - (void)died:(NSTask *)task {
     if (task != _task) return;
@@ -676,7 +683,9 @@ static const double kModelBytes = 1.62e9;  // whisper-large-v3-turbo, to show ho
 #pragma mark - Dictation: the black island with the waveform
 
 // IslandOffer: the island as a button — Tynda's mark and a word ("Normalize") — that can be clicked.
-typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTranscribing, IslandMessage, IslandOffer };
+static const float kDeadMic = 0.0001f;  // -80 dB: below any real microphone's own noise
+
+typedef NS_ENUM(NSInteger, IslandMode) { IslandRecording, IslandLocked, IslandTranscribing, IslandMessage, IslandOffer, IslandProblem };
 
 static NSImage *WhiteMark(void);  // Tynda's mark in white; drawn further down, next to the menu-bar mark
 static const CGFloat kIslandH = 46, kIslandPad = 20, kIslandMarkW = 27, kIslandMarkH = 22.1;
@@ -686,8 +695,10 @@ static NSFont *IslandFont(void) { return [NSFont systemFontOfSize:14 weight:NSFo
 @property(nonatomic) IslandMode mode;
 @property(nonatomic, copy) NSString *message;
 @property(nonatomic, copy) void (^onClick)(void);
+@property(nonatomic, copy) NSString *symbol;  // the sign of a problem
 @property(nonatomic, readonly) BOOL hovered;
 + (CGFloat)offerWidth:(NSString *)title;
++ (CGFloat)problemWidth:(NSString *)text;
 - (void)pushLevel:(float)level;
 - (void)resetLevels;
 @end
@@ -704,6 +715,10 @@ static NSFont *IslandFont(void) { return [NSFont systemFontOfSize:14 weight:NSFo
 
 + (CGFloat)offerWidth:(NSString *)title {
     return kIslandPad + kIslandMarkW + 10 + ceil([title sizeWithAttributes:@{NSFontAttributeName: IslandFont()}].width) + kIslandPad + 4;
+}
+
++ (CGFloat)problemWidth:(NSString *)text {
+    return kIslandPad + 20 + 10 + ceil([text sizeWithAttributes:@{NSFontAttributeName: IslandFont()}].width) + kIslandPad + 4;
 }
 
 // Clicks reach the island only while it is a button, and never take the keyboard from the app being typed in.
@@ -756,6 +771,17 @@ static NSFont *IslandFont(void) { return [NSFont systemFontOfSize:14 weight:NSFo
         }
         [WhiteMark() drawInRect:NSMakeRect(pad, NSMidY(b) - kIslandMarkH / 2, kIslandMarkW, kIslandMarkH)];
         CGFloat x = pad + kIslandMarkW + 10;
+        [self drawText:self.message ?: @"" inRect:NSMakeRect(x, 0, b.size.width - x - pad + 6, b.size.height) alpha:1 align:NSTextAlignmentLeft];
+        return;
+    }
+    if (self.mode == IslandProblem) {
+        // Something stands in the way of dictation: an amber sign and what to do about it.
+        NSImageSymbolConfiguration *conf = [[NSImageSymbolConfiguration configurationWithPointSize:16 weight:NSFontWeightRegular]
+            configurationByApplyingConfiguration:[NSImageSymbolConfiguration configurationWithPaletteColors:@[[NSColor colorWithRed:1 green:0.72 blue:0.25 alpha:1]]]];
+        NSImage *sign = [[NSImage imageWithSystemSymbolName:self.symbol ?: @"exclamationmark.triangle.fill" accessibilityDescription:nil] imageWithSymbolConfiguration:conf];
+        NSSize size = sign.size;
+        [sign drawInRect:NSMakeRect(pad + 10 - size.width / 2, NSMidY(b) - size.height / 2, size.width, size.height)];
+        CGFloat x = pad + 20 + 10;
         [self drawText:self.message ?: @"" inRect:NSMakeRect(x, 0, b.size.width - x - pad + 6, b.size.height) alpha:1 align:NSTextAlignmentLeft];
         return;
     }
@@ -831,6 +857,7 @@ static NSView *GlassPill(NSRect frame, NSView *content) {
 
 @interface Island : NSObject
 - (void)show:(IslandMode)mode message:(NSString *)message levelSource:(float (^)(void))level;
+- (void)problem:(NSString *)text symbol:(NSString *)symbol;  // an amber sign, the words, and a short shake to catch the eye
 - (void)offer:(NSString *)title action:(void (^)(void))action;  // the island becomes a button, until it shows something else or hides
 @property(nonatomic, readonly) BOOL hovered;  // the pointer is on the island
 - (void)hideAfter:(NSTimeInterval)delay;
@@ -849,6 +876,31 @@ static NSView *GlassPill(NSRect frame, NSView *content) {
 
 - (BOOL)hovered { return self.visible && _view.hovered; }
 
+- (void)problem:(NSString *)text symbol:(NSString *)symbol {
+    BOOL same = self.visible && _view.mode == IslandProblem && [_view.message isEqualToString:text];
+    [self show:IslandProblem message:text levelSource:nil];
+    _view.symbol = symbol;
+    _view.needsDisplay = YES;
+    if (same) return;  // already saying it: do not shake again
+    // A short side-to-side shake, the way a login window says "no".
+    NSUInteger gen = _generation;
+    NSPanel *panel = _panel;
+    CGFloat w = panel.frame.size.width;
+    NSDate *began = [NSDate date];
+    NSTimer *shake = [NSTimer timerWithTimeInterval:1.0 / 60 repeats:YES block:^(NSTimer *t) {
+        NSTimeInterval at = -began.timeIntervalSinceNow - 0.16;  // let the island arrive first
+        if (gen != self->_generation || at > 0.5) {
+            if (gen == self->_generation) [panel setFrameOrigin:NSMakePoint(NSMidX(panel.screen.frame) - w / 2, panel.frame.origin.y)];
+            [t invalidate];
+            return;
+        }
+        if (at < 0) return;
+        CGFloat dx = 9 * sin(at * 2 * M_PI * 6) * exp(-at * 6);
+        [panel setFrameOrigin:NSMakePoint(NSMidX(panel.screen.frame) - w / 2 + dx, panel.frame.origin.y)];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:shake forMode:NSRunLoopCommonModes];
+}
+
 - (void)offer:(NSString *)title action:(void (^)(void))action {
     [self show:IslandOffer message:title levelSource:nil];
     _view.onClick = action;
@@ -857,7 +909,10 @@ static NSView *GlassPill(NSRect frame, NSView *content) {
 - (void)show:(IslandMode)mode message:(NSString *)message levelSource:(float (^)(void))level {
     _generation++;
     CGFloat h = kIslandH;
-    CGFloat w = mode == IslandLocked ? 440 : mode == IslandRecording ? 230 : mode == IslandMessage ? 340 : mode == IslandOffer ? [IslandView offerWidth:message ?: @""] : 124;
+    CGFloat w = mode == IslandLocked ? 440 : mode == IslandRecording ? 230 : mode == IslandMessage ? 340 : mode == IslandOffer ? [IslandView offerWidth:message ?: @""] : mode == IslandProblem ? [IslandView problemWidth:message ?: @""] : 124;
+    // A fresh window for every appearance. One kept for days, across displays being plugged and unplugged,
+    // was seen to stop appearing over another app's full-screen Space; a new one always does.
+    if (_panel && !self.visible) { [_panel orderOut:nil]; _panel = nil; }
     if (!_panel) {
         _panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, w, h)
                                             styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
@@ -1691,6 +1746,10 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     NSString *_offerText;   // what was typed, as spoken
     BOOL _offerLive;        // the button is on screen
     BOOL _normalizing;      // Claude Code is working on _offerText
+    BOOL _saidSilent;       // this recording has already been told that its microphone gives no sound
+    NSTimer *_blindTimer;   // without Accessibility the key cannot be heard; this notices it being held, to say so
+    NSDate *_blindSince;
+    BOOL _blindSaid;
     BOOL _offerDirty;       // the user typed or clicked since: the typed text can no longer be found by counting back
     NSUInteger _offerGen;
     NSDate *_fnDownAt;
@@ -2037,7 +2096,18 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
     if (!_tap) {
         _tapTimer = [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *t) {
             [self installTap];
-            if (self->_tap) { [t invalidate]; self->_tapTimer = nil; }
+            if (self->_tap) { [t invalidate]; self->_tapTimer = nil; [self->_blindTimer invalidate]; self->_blindTimer = nil; }
+        }];
+        // Until Accessibility is granted, presses of the dictation key do not reach Tynda. The state of the
+        // keyboard can still be asked, so a held key is answered with the reason instead of nothing.
+        _blindTimer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
+            if (self->_tap || ![self dictationEnabled] || gChoosingHotkey) return;
+            if (![self hotkeyPhysicallyDown]) { self->_blindSince = nil; self->_blindSaid = NO; return; }
+            if (!self->_blindSince) self->_blindSince = [NSDate date];
+            if (!self->_blindSaid && -self->_blindSince.timeIntervalSinceNow > 0.4) {
+                self->_blindSaid = YES;
+                [self islandProblem:L(@"No Accessibility permission — allow it in Tynda's Setup", @"Нет универсального доступа — разреши в Setup Tynda") symbol:@"lock.fill" for:3.5];
+            }
         }];
     }
 }
@@ -2117,10 +2187,29 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
             if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] != AVAuthorizationStatusAuthorized) {
                 Log(@"dictation: no microphone permission yet, asking");
                 [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {}];
-                [_island show:IslandMessage message:L(@"No microphone access", @"Нет доступа к микрофону") levelSource:nil];
-                [_island hideAfter:2];
+                [self islandProblem:L(@"No microphone access — allow it in Tynda's Setup", @"Нет доступа к микрофону — разреши в Setup Tynda") symbol:@"mic.slash.fill" for:3.5];
                 return;
             }
+            // The key always gets an answer. When there is nothing to recognise speech with yet, the island says
+            // which of the three it is instead of pretending to listen. Only for a real hold: a tap or fn+arrow
+            // is not a dictation.
+            NSString *wait = nil, *sign = @"hourglass";
+            if (!PythonPath()) {
+                BOOL installing = [NSFileManager.defaultManager fileExistsAtPath:SetupMarker()];
+                wait = installing ? L(@"The speech model is being installed — see Tynda's Setup", @"Модель речи устанавливается — смотри Setup Tynda")
+                                  : L(@"The speech model is not installed — open Tynda's Setup", @"Модель речи не установлена — открой Setup Tynda");
+                if (!installing) sign = @"arrow.down.circle.fill";
+            } else if (!_transcriber.ready) {
+                [_transcriber wake];
+                wait = L(@"The speech model is loading — a few seconds", @"Модель речи загружается — несколько секунд");
+            }
+            if (wait) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    if (self->_dState == DIdle && [self hotkeyPhysicallyDown]) [self islandProblem:wait symbol:sign for:3];
+                });
+                return;
+            }
+            _saidSilent = NO;
             [_dictation startWithFailure:^(NSError *err) {
                 Log(@"dictation: microphone start failed: %@", err);
                 if (self->_dState == DIdle) return;
@@ -2128,7 +2217,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
                 [self stopWatchdog];
                 [self->_dictation cancel];
                 self->_dState = DIdle;
-                [self islandSay:L(@"Microphone is unavailable", @"Микрофон недоступен") for:1.5];
+                [self islandProblem:L(@"No microphone found — check Sound → Input", @"Микрофон не найден — проверь «Звук → Вход»") symbol:@"mic.slash.fill" for:3.5];
             }];
             _offerLive = NO;  // a new dictation: the button of the previous one goes away
             _offerGen++;
@@ -2197,6 +2286,13 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 - (void)watchdogTick {
     NSDate *now = [NSDate date];
     if (_dictation.level > 0.12) _lastVoiceAt = now;
+    // A microphone that is switched off (a closed lid, a muted headset) gives exact silence. Say it while
+    // the key is still held, instead of a flat wave that looks like listening.
+    if (!_saidSilent && (_dState == DHolding || _dState == DLocked) && [now timeIntervalSinceDate:_recStartedAt] > 1.0 && _dictation.rawPeak < kDeadMic) {
+        _saidSilent = YES;
+        Log(@"dictation: problem shown — the microphone gives no sound");
+        [_island problem:L(@"The microphone is silent — check Sound → Input", @"Микрофон молчит — проверь «Звук → Вход»") symbol:@"mic.slash.fill"];
+    }
     if (_dState == DHolding && !DemoDictation()) {
         // The release of fn can get lost (password fields hide keys from us). Ask the keyboard itself.
         CGEventFlags flag = HotkeyFlag(gHotkey);
@@ -2220,6 +2316,23 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 - (void)islandToRest {
     if (_jobs > 0) [_island show:IslandTranscribing message:nil levelSource:nil];
     else [_island hideAfter:0];
+}
+
+// The dictation key was pressed and dictation cannot happen: the island says why, so that a press never
+// meets silence.
+- (void)islandProblem:(NSString *)message symbol:(NSString *)symbol for:(NSTimeInterval)seconds {
+    Log(@"dictation: problem shown — %@", message);
+    [_island problem:message symbol:symbol];
+    NSUInteger gen = _dGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (gen == self->_dGeneration && self->_dState == DIdle) [self islandToRest];
+    });
+}
+
+- (BOOL)hotkeyPhysicallyDown {
+    CGEventFlags flag = HotkeyFlag(gHotkey);
+    return flag ? (CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState) & flag) != 0
+                : CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, gHotkey);
 }
 
 - (void)islandSay:(NSString *)message for:(NSTimeInterval)seconds {
@@ -2248,16 +2361,17 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 - (void)finishDictation:(BOOL)automatic {
     _dGeneration++;
     [self stopWatchdog];
-    float peak = _dictation.peakLevel;
+    float peak = _dictation.peakLevel, rawPeak = _dictation.rawPeak;
     NSString *name = [NSString stringWithFormat:@"tynda-dictation-%lu.wav", (unsigned long)++_wavCounter];
     NSURL *wav = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:name]];
     NSTimeInterval duration = [_dictation stopAndWriteWAV:wav];
     NSDate *sentAt = [NSDate date];
     _dState = DIdle;
-    Log(@"dictation: recorded %.1fs, peak %.2f%@", duration, peak, automatic ? @" (auto-stop)" : @"");
+    Log(@"dictation: recorded %.1fs, peak %.2f, loudest sample %.5f%@", duration, peak, rawPeak, automatic ? @" (auto-stop)" : @"");
     if (duration < 0.4 || peak < 0.05) {  // too short or nothing but silence
         [NSFileManager.defaultManager removeItemAtURL:wav error:nil];
-        if (automatic) [self islandSay:L(@"Stopped: silence", @"Остановил запись: тишина") for:2.5];
+        if (duration >= 0.4 && rawPeak < kDeadMic) [self islandProblem:L(@"The microphone is silent — check Sound → Input", @"Микрофон молчит — проверь «Звук → Вход»") symbol:@"mic.slash.fill" for:3.5];
+        else if (automatic) [self islandSay:L(@"Stopped: silence", @"Остановил запись: тишина") for:2.5];
         else if (duration >= 0.4) [self islandSay:L(@"Didn't catch that", @"Не расслышал") for:1.2];
         else [self islandToRest];
         [self demoFinish:@""];

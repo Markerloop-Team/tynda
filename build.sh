@@ -9,7 +9,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -fobjc-arc -O2 -Wall -mmacosx-version-min=14.0 \
   -framework Cocoa -framework Carbon -framework ApplicationServices -framework AVFoundation -framework ServiceManagement -framework QuartzCore \
   Sources/main.m -o "$APP/Contents/MacOS/Tynda"
-cp dictate_server.py setup_engine.sh Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp dictate_server.py setup_engine.sh engine-requirements.txt Resources/AppIcon.icns "$APP/Contents/Resources/"
 # The downloadable build carries uv, so that the app can install its speech engine without Homebrew.
 # tools/make_dmg.sh puts it into vendor/; a plain build from source goes without it.
 if [[ -f vendor/uv ]]; then cp vendor/uv "$APP/Contents/Resources/uv"; fi

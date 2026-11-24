@@ -27,6 +27,8 @@ jobs:
           zsh -n tools/make_dmg.sh
           zsh -n setup_engine.sh
           python3 -m py_compile dictate_server.py
+          test -s engine-requirements.txt
+          ! grep -E '^[A-Za-z0-9_.-]+==' engine-requirements.txt | grep -v ' \\$' | grep -v ';' || { echo "a package without checksums"; exit 1; }
 
       - name: Build Tynda.app
         run: ./build.sh

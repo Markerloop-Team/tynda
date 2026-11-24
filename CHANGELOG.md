@@ -6,6 +6,13 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+### Security
+
+- **The speech engine is installed exactly as it was tried.** Every Python package comes from a list with
+  fixed versions and checksums (`engine-requirements.txt`), and the speech model is fetched at one fixed
+  revision. A package or a model replaced upstream is refused instead of installed. A Mac that is already
+  set up keeps what it has.
+
 ## [0.6.1] — 2026-11-24
 
 ### Changed

@@ -12,6 +12,9 @@ SUPPORT="$HOME/Library/Application Support/Tynda"
 VENV="$SUPPORT/venv"
 MARK="$SUPPORT/setting-up"   # while this file exists the app does not trust the environment
 MODEL="${TYNDA_WHISPER_MODEL:-mlx-community/whisper-large-v3-turbo}"
+# The exact version of the model, so that what is downloaded is what was tried. Keep in step with dictate_server.py.
+MODEL_REVISION="a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
+[[ -n "${TYNDA_WHISPER_MODEL:-}" ]] && MODEL_REVISION=""   # somebody's own model: take its newest
 
 mkdir -p "$SUPPORT"
 : > "$MARK"
@@ -39,10 +42,11 @@ rm -rf "$VENV"
 "$UV" venv --quiet --python 3.12 --python-preference only-managed "$VENV"
 
 echo "STAGE packages"
-"$UV" pip install --quiet --python "$VENV/bin/python" mlx-whisper
+# Exact versions with checksums: a package that was replaced upstream does not get in.
+"$UV" pip install --quiet --python "$VENV/bin/python" --require-hashes -r "$HERE/engine-requirements.txt"
 
 echo "STAGE model"
-"$VENV/bin/python" -c 'import sys; from huggingface_hub import snapshot_download; snapshot_download(repo_id=sys.argv[1])' "$MODEL"
+"$VENV/bin/python" -c 'import sys; from huggingface_hub import snapshot_download; snapshot_download(repo_id=sys.argv[1], revision=sys.argv[2] or None)' "$MODEL" "$MODEL_REVISION"
 
 rm -f "$MARK"
 echo "STAGE done"

@@ -37,18 +37,23 @@ if [[ ! -x "$VENV/bin/python" ]]; then
   fi
 fi
 if command -v uv >/dev/null; then
-  uv pip install --python "$VENV/bin/python" --upgrade mlx-whisper
+  uv pip install --python "$VENV/bin/python" --require-hashes -r engine-requirements.txt
 else
   "$VENV/bin/python" -m pip install --quiet --upgrade pip
-  "$VENV/bin/python" -m pip install --upgrade mlx-whisper
+  "$VENV/bin/python" -m pip install --require-hashes -r engine-requirements.txt
 fi
 
 say_step "Downloading the speech model (about 1.6 GB, only the first time)"
-TYNDA_MODEL="$MODEL" "$VENV/bin/python" - <<'EOF'
+# The exact version of the model, the same one as in setup_engine.sh and dictate_server.py.
+MODEL_REVISION="a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
+[[ -n "${TYNDA_WHISPER_MODEL:-}" ]] && MODEL_REVISION=""
+TYNDA_MODEL="$MODEL" TYNDA_MODEL_REVISION="$MODEL_REVISION" "$VENV/bin/python" - <<'EOF'
 import os
 import numpy as np
 import mlx_whisper
-mlx_whisper.transcribe(np.zeros(16000, dtype=np.float32), path_or_hf_repo=os.environ["TYNDA_MODEL"], language="en")
+from huggingface_hub import snapshot_download
+model = snapshot_download(repo_id=os.environ["TYNDA_MODEL"], revision=os.environ["TYNDA_MODEL_REVISION"] or None)
+mlx_whisper.transcribe(np.zeros(16000, dtype=np.float32), path_or_hf_repo=model, language="en")
 print("The model is ready.")
 EOF
 

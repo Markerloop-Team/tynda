@@ -25,6 +25,16 @@ from mlx_whisper.audio import N_FRAMES, N_SAMPLES, log_mel_spectrogram, pad_or_t
 from mlx_whisper.transcribe import ModelHolder  # noqa: E402
 
 MODEL = os.environ.get("TYNDA_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+# The exact version of the model that setup_engine.sh downloads. Loading it by its folder keeps the engine
+# from fetching a newer one by itself. A Mac set up before the version was fixed, or somebody's own model,
+# has no such folder: then the model is loaded by name, as before.
+MODEL_REVISION = "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
+if "TYNDA_WHISPER_MODEL" not in os.environ:
+    try:
+        from huggingface_hub import snapshot_download
+        MODEL = snapshot_download(repo_id=MODEL, revision=MODEL_REVISION, local_files_only=True)
+    except Exception:
+        pass
 RATE = 16000
 
 # The languages to listen for, chosen in the setup window. Left to itself the model sometimes takes a

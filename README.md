@@ -21,7 +21,7 @@ Free to use, open source, MIT. Pull requests are welcome — see [Contributing](
 
 A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, and the defaults work from the first sentence.
 
-Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh (it comes from Kazakhstan, where people speak Kazakh more often than they type it). Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak. You can switch languages within one dictation: pause briefly between them, and each part is written in its own language.
+Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh (it comes from Kazakhstan, where people speak Kazakh more often than they type it). Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak. You can switch languages within one dictation: pause for half a second or more between them, and each part is written in its own language. A switch without a pause is heard as one language, and short Kazakh fragments in fast speech are often missed: the speech model knows Kazakh less well than Russian or English.
 
 **Your words.** Names, brands and terms can go into *My words* in the setup window. The speech model is shown the list before every phrase and spells those words your way more often — a hint, so not every time. Up to 100.
 

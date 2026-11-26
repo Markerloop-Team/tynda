@@ -458,6 +458,7 @@ static NSArray<NSString *> *ChosenLanguages(void) {
 // offers "Normalize via Claude" after a dictation: the text just typed is handed to Claude Code as
 // plain text, and what comes back replaces it. Nothing is sent without that click.
 // Override the program with: defaults write app.tynda.mac claude /path/to/claude
+static NSString *DesktopClaudePath(void);
 static NSString *ClaudePath(void) {
     NSMutableArray<NSString *> *candidates = [NSMutableArray new];
     NSString *custom = [NSUserDefaults.standardUserDefaults stringForKey:@"claude"];
@@ -466,11 +467,79 @@ static NSString *ClaudePath(void) {
     [candidates addObject:[NSHomeDirectory() stringByAppendingPathComponent:@".claude/local/claude"]];
     [candidates addObjectsFromArray:@[@"/opt/homebrew/bin/claude", @"/usr/local/bin/claude"]];
     for (NSString *c in candidates) if ([NSFileManager.defaultManager isExecutableFileAtPath:c]) return c;
+    return DesktopClaudePath();
+}
+
+// The Claude desktop app keeps its own copy of Claude Code, downloaded the first time its Code tab is opened:
+// ~/Library/Application Support/Claude/claude-code/<version>/<build>/claude.app/Contents/MacOS/claude.
+// The newest finished download (the app marks it with .verified) is the one to use.
+static NSString *DesktopClaudePath(void) {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSString *root = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Claude/claude-code"];
+    NSArray<NSString *> *versions = [[fm contentsOfDirectoryAtPath:root error:nil] ?: @[] sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        return [b compare:a options:NSNumericSearch];
+    }];
+    for (NSString *version in versions) {
+        NSString *dir = [root stringByAppendingPathComponent:version];
+        for (NSString *build in [fm contentsOfDirectoryAtPath:dir error:nil] ?: @[]) {
+            NSString *home = [dir stringByAppendingPathComponent:build];
+            NSString *path = [home stringByAppendingPathComponent:@"claude.app/Contents/MacOS/claude"];
+            if ([fm fileExistsAtPath:[home stringByAppendingPathComponent:@".verified"]] && [fm isExecutableFileAtPath:path]) return path;
+        }
+    }
     return nil;
 }
 
+// Whether that Claude Code is signed in. The desktop app's own sign-in does not carry over to it, so a
+// copy found there usually needs one sign-in in Terminal. Asked in the background (`claude auth status`
+// exits 0 when signed in), at most every few seconds; until the first answer comes it counts as signed in.
+typedef NS_ENUM(NSInteger, ClaudeSignIn) { ClaudeSignInUnknown, ClaudeSignedIn, ClaudeSignedOut };
+static ClaudeSignIn gClaudeSignIn = ClaudeSignInUnknown;
+static void CheckClaudeSignIn(void (^changed)(void)) {
+    static NSDate *asked;
+    static BOOL asking;
+    NSString *claude = ClaudePath();
+    if (!claude || asking || (asked && -asked.timeIntervalSinceNow < 4)) return;
+    asking = YES;
+    asked = [NSDate date];
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:claude];
+    task.arguments = @[@"auth", @"status"];
+    task.currentDirectoryURL = [NSURL fileURLWithPath:NSTemporaryDirectory()];
+    task.standardOutput = task.standardError = [NSFileHandle fileHandleWithNullDevice];
+    task.terminationHandler = ^(NSTask *t) {
+        ClaudeSignIn now = t.terminationStatus == 0 ? ClaudeSignedIn : ClaudeSignedOut;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            asking = NO;
+            if (now == gClaudeSignIn) return;
+            Log(@"claude: %@ (%@)", now == ClaudeSignedIn ? @"signed in" : @"not signed in", claude);
+            gClaudeSignIn = now;
+            if (changed) changed();
+        });
+    };
+    if (![task launchAndReturnError:nil]) asking = NO;
+}
+
+// Claude Code is here and can answer.
+static BOOL ClaudeReady(void) { return ClaudePath() != nil && gClaudeSignIn != ClaudeSignedOut; }
+
+// Runs a shell command in a new Terminal window, where the person can see it and answer its questions.
+static void RunInTerminal(NSString *command) {
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"tynda-claude.command"];
+    NSString *script = [NSString stringWithFormat:@"#!/bin/bash\nclear\n%@\necho\necho 'Done. You can close this window and go back to Tynda.'\n", command];
+    [script writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [NSFileManager.defaultManager setAttributes:@{NSFilePosixPermissions: @0700} ofItemAtPath:path error:nil];
+    NSURL *terminal = [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:@"com.apple.Terminal"];
+    [NSWorkspace.sharedWorkspace openURLs:@[[NSURL fileURLWithPath:path]] withApplicationAtURL:terminal
+                            configuration:[NSWorkspaceOpenConfiguration configuration] completionHandler:nil];
+}
+
+static NSString *ShellQuoted(NSString *s) {
+    return [NSString stringWithFormat:@"'%@'", [s stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]];
+}
+
 // The switch in the setup window: every dictation goes through Claude Code before it is typed.
-static BOOL NormalizeAlways(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"normalizeAlways"] && ClaudePath() != nil; }
+static BOOL NormalizeAlways(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"normalizeAlways"] && ClaudeReady(); }
 
 // Calls back on the main queue with the tidied text, or nil when Claude Code did not give one in time.
 // What Claude Code already knows about this person: their global instructions and the indexes of the three
@@ -1465,12 +1534,14 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
                                  : L(@"Not installed. Run install.sh.", @"Не установлена. Запусти install.sh.")))
        button:failed ? L(@"Try again", @"Повторить") : nil];
 
-    BOOL claude = ClaudePath() != nil, always = NormalizeAlways();
+    CheckClaudeSignIn(^{ [self refresh]; });
+    BOOL found = ClaudePath() != nil, claude = ClaudeReady(), always = NormalizeAlways();
     [self set:_claude ok:claude busy:NO
-       detail:!claude ? L(@"Needs Claude Code on this Mac, signed in.", @"Нужен Claude Code на этом Mac, со входом в аккаунт.")
+       detail:!found ? L(@"Needs Claude Code on this Mac, signed in.", @"Нужен Claude Code на этом Mac, со входом в аккаунт.")
+              : !claude ? L(@"Claude Code is here. Sign in once, in Terminal.", @"Claude Code есть. Войди один раз, в Терминале.")
               : always ? L(@"Always: every dictation is tidied before it is typed, a few seconds longer.", @"Всегда: каждая диктовка приводится в порядок перед вставкой, на несколько секунд дольше.")
                        : L(@"On request: the island offers Normalize after a dictation. Switch on for always.", @"По запросу: островок предлагает Normalize после диктовки. Включи, чтобы всегда.")
-       button:L(@"Get Claude Code", @"Скачать")];
+       button:!found ? L(@"Install", @"Установить") : L(@"Sign in", @"Войти")];
     _normalizeAlways.hidden = !claude;
     _normalizeAlways.state = always ? NSControlStateValueOn : NSControlStateValueOff;
     if (claude) _claude.detail.frame = NSMakeRect(54, kDetailY, kSetupW - 2 * kSetupPad - 54 - 16 - 42 - 14, kDetailH);
@@ -1671,7 +1742,13 @@ static const CGFloat kSetupW = 560, kSetupPad = 34, kRowH = 58, kRowGap = 8, kBu
     [self refresh];
 }
 
-- (void)claudeAction { [self openSettings:@"https://claude.com/claude-code"]; }
+// No Claude Code: Anthropic's own installer, then the sign-in. Claude Code without a sign-in: just the sign-in.
+- (void)claudeAction {
+    NSString *claude = ClaudePath();
+    Log(@"setup: %@ Claude Code in Terminal", claude ? @"signing in to" : @"installing");
+    RunInTerminal(claude ? [NSString stringWithFormat:@"%@ auth login", ShellQuoted(claude)]
+                         : @"curl -fsSL https://claude.ai/install.sh | bash && \"$HOME/.local/bin/claude\" auth login");
+}
 
 - (void)normalizeAlwaysAction {
     [NSUserDefaults.standardUserDefaults setBool:_normalizeAlways.state == NSControlStateValueOn forKey:@"normalizeAlways"];
@@ -1774,6 +1851,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
+    CheckClaudeSignIn(nil);
     _statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     _statusItem.button.image = MarkImage(MarkLoading, 0);
     _markShown = -1;  // nothing shown yet, so the first state always draws
@@ -2429,7 +2507,7 @@ static CGEventRef TapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRe
 - (BOOL)offerNormalize:(NSString *)text {
     id wanted = [NSUserDefaults.standardUserDefaults objectForKey:@"normalizeOffer"];
     if (wanted && ![wanted boolValue]) return NO;
-    if (!ClaudePath()) return NO;
+    if (!ClaudeReady()) return NO;
     _offerText = text;
     _offerLive = YES;
     _offerDirty = NO;

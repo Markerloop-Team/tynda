@@ -60,7 +60,8 @@ if GLOSSARY:
 STYLE = {
     "en": "Okay, look. This is ordinary dictation: with capital letters, commas and full stops. Right?",
     "ru": "Так, смотри. Это обычная диктовка: с заглавными буквами, запятыми и точками. Хорошо?",
-    "kk": "Жарайды, қара. Бұл қарапайым диктовка: бас әріптермен, үтірлермен және нүктелермен.",
+    # No Kazakh lead-in: on short Kazakh phrases the model wrote the lead-in back instead of the speech,
+    # and it punctuates Kazakh well enough without one.
     "es": "Bien, mira. Esto es un dictado normal: con mayúsculas, comas y puntos. ¿De acuerdo?",
     "de": "Gut, schau mal. Das ist ein ganz normales Diktat: mit Großbuchstaben, Kommas und Punkten. In Ordnung?",
     "fr": "Bon, écoute. C'est une dictée ordinaire : avec des majuscules, des virgules et des points. D'accord ?",
@@ -103,29 +104,90 @@ def read_wav(path):
         return np.interp(np.arange(0, len(audio), step), np.arange(len(audio)), smooth).astype(np.float32)
 
 
-def spoken_language(audio):
+def spoken_languages(clips):
+    """The language of each clip, among the chosen ones. One pass of the model for all of them."""
     model = ModelHolder.get_model(MODEL, mx.float16)
-    mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
-    _, probs = model.detect_language(pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16))
-    return max(LANGS or probs, key=lambda c: probs.get(c, 0))
+    mels = [pad_or_trim(log_mel_spectrogram(c, n_mels=model.dims.n_mels, padding=N_SAMPLES), N_FRAMES, axis=-2)
+            for c in clips]
+    _, probs = model.detect_language(mx.stack(mels).astype(mx.float16))
+    return [max(LANGS or p, key=lambda c: score(p, c)) for p in probs]
 
 
-def run(audio, language):
-    lead_in = " ".join(part for part in (GLOSSARY, STYLE.get(language)) if part) or None
+# The model knows little Kazakh and often hears it as Turkish or Azerbaijani; Russian with an accent may
+# pass for Ukrainian. A relative nobody chose counts for the chosen language of its family.
+FAMILIES = [{"kk", "tr", "az", "uz", "tk", "tt", "ba"}, {"ru", "uk", "be"}]
+
+
+def score(probs, lang):
+    family = next((f for f in FAMILIES if lang in f), {lang})
+    return sum(probs.get(c, 0) for c in family if c == lang or c not in LANGS)
+
+
+def spoken_language(audio):
+    return spoken_languages([audio])[0]
+
+
+def run(audio, language, before=""):
+    """before: what was said just before, in another language. It carries capitals and punctuation
+    across the seam; the language itself is fixed by `language`, so a Russian tail doesn't turn a
+    Kazakh piece Russian."""
+    lead_in = " ".join(part for part in (GLOSSARY, STYLE.get(language), before[-120:]) if part) or None
     return mlx_whisper.transcribe(audio, path_or_hf_repo=MODEL, language=language,
                                   initial_prompt=lead_in,
                                   condition_on_previous_text=True, verbose=None)
 
 
-def transcribe(path):
-    audio = read_wav(path)
-    if len(audio) == 0 or float(np.abs(audio).max()) < 0.003:  # digital silence
-        return ""
-    try:
-        language = spoken_language(audio)
-    except Exception:
-        language = None  # let the model decide on its own
-    r = run(audio, language)
+def pieces(audio, pause=0.5, shortest=0.6):
+    """Cuts the phrase where the speaker stopped for at least `pause` seconds. A piece shorter than
+    `shortest` is glued to the one before it: a single short word says little about its language."""
+    win = RATE // 50  # 20 ms
+    peaks = np.abs(audio[:len(audio) // win * win]).reshape(-1, win).max(axis=1)
+    loud = peaks > max(0.01, float(peaks.max()) * 0.05)
+    spans, start, quiet = [], None, 0
+    for i, on in enumerate(loud):
+        if on:
+            start = i if start is None else start
+            quiet = 0
+        elif start is not None:
+            quiet += 1
+            if quiet * win >= pause * RATE:
+                spans.append([start, i - quiet + 1])
+                start, quiet = None, 0
+    if start is not None:
+        spans.append([start, len(loud)])
+    merged = []
+    for s, e in spans:
+        if merged and (e - s) * win < shortest * RATE:
+            merged[-1][1] = e
+        elif merged and (merged[-1][1] - merged[-1][0]) * win < shortest * RATE:
+            merged[-1][1] = e
+        else:
+            merged.append([s, e])
+    pad = RATE // 10
+    return [audio[max(0, s * win - pad):e * win + pad] for s, e in merged]
+
+
+def by_language(audio):
+    """[(language, audio)]: one entry when the phrase is in one language, several when it switches
+    between the chosen languages at pauses.
+    Each run of pieces in one language is put back together, so a phrase in one language costs one
+    quick look per piece and is then read whole, as before."""
+    parts = pieces(audio) if len(LANGS) > 1 else []
+    if len(parts) < 2:
+        return [(spoken_language(audio), audio)]
+    runs = []
+    for part, lang in zip(parts, spoken_languages(parts)):
+        if runs and runs[-1][0] == lang:
+            runs[-1][1].append(part)
+        else:
+            runs.append((lang, [part]))
+    if len(runs) < 2:
+        return [(runs[0][0], audio)]
+    gap = np.zeros(RATE // 5, dtype=np.float32)
+    return [(lang, np.concatenate([x for p in ps for x in (p, gap)])) for lang, ps in runs]
+
+
+def clean(r):
     parts = [s["text"].strip() for s in r.get("segments", []) if s.get("no_speech_prob", 0) <= 0.6]
     text = re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
     if JUNK.search(text) and len(text) < 80:
@@ -134,6 +196,23 @@ def transcribe(path):
         return ""
     words = re.findall(r"\w+", text.lower())
     return "" if all(w in {"you", "thank", "thanks", "bye"} for w in words) else text
+
+
+def transcribe(path):
+    audio = read_wav(path)
+    if len(audio) == 0 or float(np.abs(audio).max()) < 0.003:  # digital silence
+        return ""
+    try:
+        runs = by_language(audio)
+    except Exception:
+        runs = [(None, audio)]  # let the model decide on its own
+    text = ""
+    for lang, part in runs:  # "раз, два, три, бір, екі, үш, one, two, three": each language read as itself
+        piece = clean(run(part, lang, text))
+        if text.endswith((".", "!", "?")):
+            piece = piece[:1].upper() + piece[1:]
+        text = (text + " " + piece).strip()
+    return text
 
 
 def quit_with_parent():

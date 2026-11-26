@@ -6,6 +6,30 @@ behaviour; the notes always say so.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-26
+
+### Changed
+
+- **Languages mixed in one dictation come out right.** Until now the whole dictation was heard as one
+  language: "раз, два, три, бір, екі, үш, one, two, three" came back with the Kazakh part as Russian-sounding
+  noise. Tynda now cuts the dictation at pauses, tells the language of each piece among the ones you chose,
+  and reads each run of one language as that language. Capitals and punctuation carry across the seams.
+  A switch of language without a pause is still heard as one language.
+- **Kazakh is recognised as Kazakh more often.** The model tends to hear Kazakh as Turkish or Azerbaijani;
+  when Kazakh is on your list and they are not, they now count for Kazakh (Ukrainian likewise counts for
+  Russian). The punctuation lead-in for Kazakh is gone: on short phrases the model wrote it back instead
+  of the speech.
+- **Cost:** a dictation that switches languages takes a few seconds longer; one in a single language with
+  pauses, about half a second longer; a short one, the same as before.
+
+### Added
+
+- **Normalize works with the Claude desktop app.** The desktop app keeps its own copy of Claude Code (from
+  the first time its Code tab is opened); Tynda now finds and uses it when there is no other. That copy does
+  not share the desktop app's sign-in, so the setup window offers **Sign in**, which opens Terminal for a
+  one-time sign-in. With no Claude Code at all, **Install** runs Anthropic's installer in Terminal and then
+  the sign-in. Normalize is not offered until Claude Code is signed in.
+
 ## [0.6.2] — 2026-11-25
 
 ### Security
@@ -197,7 +221,8 @@ The first public release. Early alpha: it works on its author's Mac and has not 
 - Not signed or notarised: installed from source, and macOS asks for the permissions again after every rebuild.
 - Apple silicon and macOS 14 or newer only.
 
-[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Markerloop-Team/tynda/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.7.0
 [0.6.2]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.6.2
 [0.6.1]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Markerloop-Team/tynda/releases/tag/v0.6.0

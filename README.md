@@ -21,11 +21,11 @@ Free to use, open source, MIT. Pull requests are welcome — see [Contributing](
 
 A small black island with a live waveform shows at the top of the screen while Tynda listens. That is the whole app: no window to keep open, no account, and the defaults work from the first sentence.
 
-Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh (it comes from Kazakhstan, where people speak Kazakh more often than they type it). Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak.
+Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh (it comes from Kazakhstan, where people speak Kazakh more often than they type it). Add or remove languages in the setup window; it only ever considers the ones on your list, so a cough is not taken for a sentence in a language you do not speak. You can switch languages within one dictation: pause for half a second or more between them, and each part is written in its own language. A switch without a pause is heard as one language, and short Kazakh fragments in fast speech are often missed: the speech model knows Kazakh less well than Russian or English.
 
 **Your words.** Names, brands and terms can go into *My words* in the setup window. The speech model is shown the list before every phrase and spells those words your way more often — a hint, so not every time. Up to 100.
 
-**Normalize.** If [Claude Code](https://claude.com/claude-code) is installed on your Mac, the island turns into a **Normalize** button after each dictation. Click it, and Claude turns your thinking aloud into the text you meant — applies your own spoken corrections ("no, scrap that"), drops the filler, follows what you say about the writing itself ("think how to put this better", "shorter") — and puts it in place of the raw text. It knows the names of your projects and people from what Claude Code already keeps about you, so they come out spelled the way you write them. It never answers or carries out what you dictated, and adds nothing you did not say. A switch in the setup window does this for every dictation without asking. Tynda holds no key and talks to no server itself: it runs the Claude Code you already have. Without Claude Code there is no button, and nothing changes.
+**Normalize.** If [Claude Code](https://claude.com/claude-code) is installed on your Mac, the island turns into a **Normalize** button after each dictation. Click it, and Claude turns your thinking aloud into the text you meant — applies your own spoken corrections ("no, scrap that"), drops the filler, follows what you say about the writing itself ("think how to put this better", "shorter") — and puts it in place of the raw text. It knows the names of your projects and people from what Claude Code already keeps about you, so they come out spelled the way you write them. It never answers or carries out what you dictated, and adds nothing you did not say. A switch in the setup window does this for every dictation without asking. Tynda holds no key and talks to no server itself: it runs the Claude Code you already have — installed on its own or the copy inside the Claude desktop app. That copy needs one sign-in: the setup window has a **Sign in** button that opens Terminal for it. Without Claude Code there is no button, and nothing changes.
 
 **The icon tells you where things stand.** The wave means ready, dots filling in mean the model is loading, an exclamation mark means the setup needs you.
 
@@ -53,7 +53,7 @@ Tynda starts with the languages of the keyboard layouts on your Mac, plus Kazakh
 
 ### Download
 
-1. Download **[Tynda-0.6.2.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.6.2/Tynda-0.6.2.dmg)** (20 MB), open it and drag Tynda into Applications.
+1. Download **[Tynda-0.7.0.dmg](https://github.com/Markerloop-Team/tynda/releases/download/v0.7.0/Tynda-0.7.0.dmg)** (20 MB), open it and drag Tynda into Applications.
 2. Open Tynda from Applications. It is not signed with an Apple Developer ID, so macOS refuses the first time: open System Settings → Privacy & Security and click **Open Anyway**.
 3. Tynda installs its speech engine and downloads the model by itself — about 3 GB, a few minutes. The setup window shows how far it is.
 

@@ -15,6 +15,10 @@ behaviour; the notes always say so.
   noise. Tynda now cuts the dictation at pauses, tells the language of each piece among the ones you chose,
   and reads each run of one language as that language. Capitals and punctuation carry across the seams.
   A switch of language without a pause is still heard as one language.
+- **Kazakh is recognised as Kazakh more often.** The model tends to hear Kazakh as Turkish or Azerbaijani;
+  when Kazakh is on your list and they are not, they now count for Kazakh (Ukrainian likewise counts for
+  Russian). The punctuation lead-in for Kazakh is gone: on short phrases the model wrote it back instead
+  of the speech.
 - **Cost:** a dictation that switches languages takes a few seconds longer; one in a single language with
   pauses, about half a second longer; a short one, the same as before.
 

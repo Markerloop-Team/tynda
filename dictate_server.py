@@ -60,7 +60,8 @@ if GLOSSARY:
 STYLE = {
     "en": "Okay, look. This is ordinary dictation: with capital letters, commas and full stops. Right?",
     "ru": "Так, смотри. Это обычная диктовка: с заглавными буквами, запятыми и точками. Хорошо?",
-    "kk": "Жарайды, қара. Бұл қарапайым диктовка: бас әріптермен, үтірлермен және нүктелермен.",
+    # No Kazakh lead-in: on short Kazakh phrases the model wrote the lead-in back instead of the speech,
+    # and it punctuates Kazakh well enough without one.
     "es": "Bien, mira. Esto es un dictado normal: con mayúsculas, comas y puntos. ¿De acuerdo?",
     "de": "Gut, schau mal. Das ist ein ganz normales Diktat: mit Großbuchstaben, Kommas und Punkten. In Ordnung?",
     "fr": "Bon, écoute. C'est une dictée ordinaire : avec des majuscules, des virgules et des points. D'accord ?",
@@ -109,7 +110,17 @@ def spoken_languages(clips):
     mels = [pad_or_trim(log_mel_spectrogram(c, n_mels=model.dims.n_mels, padding=N_SAMPLES), N_FRAMES, axis=-2)
             for c in clips]
     _, probs = model.detect_language(mx.stack(mels).astype(mx.float16))
-    return [max(LANGS or p, key=lambda c: p.get(c, 0)) for p in probs]
+    return [max(LANGS or p, key=lambda c: score(p, c)) for p in probs]
+
+
+# The model knows little Kazakh and often hears it as Turkish or Azerbaijani; Russian with an accent may
+# pass for Ukrainian. A relative nobody chose counts for the chosen language of its family.
+FAMILIES = [{"kk", "tr", "az", "uz", "tk", "tt", "ba"}, {"ru", "uk", "be"}]
+
+
+def score(probs, lang):
+    family = next((f for f in FAMILIES if lang in f), {lang})
+    return sum(probs.get(c, 0) for c in family if c == lang or c not in LANGS)
 
 
 def spoken_language(audio):
